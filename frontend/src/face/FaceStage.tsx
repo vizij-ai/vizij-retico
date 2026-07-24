@@ -41,7 +41,7 @@ function ReticoBridge() {
   const mic = useMicCapture(() => wsRef.current);
   const speech = useBrowserSpeech(() => wsRef.current);
   const [sayText, setSayText] = useState("Hi there! I can talk now.");
-  const [userText, setUserText] = useState("What's a fun fact about octopuses?");
+  const [userText, setUserText] = useState("");
 
   // Test harness: inject text as if the user spoke it, exercising the full pipeline
   // (ASR → turn gate → LLM → emotion → TTS → face) without a live mic.
@@ -202,7 +202,7 @@ function ReticoBridge() {
           value={userText}
           onChange={(e) => setUserText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && simulateUserTurn()}
-          placeholder="user says (full pipeline)…"
+          placeholder="debug: type a user turn instead of mic…"
         />
         <button
           className="rounded bg-indigo-700 px-2 py-1 hover:bg-indigo-600"
