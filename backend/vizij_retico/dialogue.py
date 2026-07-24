@@ -8,6 +8,7 @@ later for better quality. Replies are spoken via the provided `speak` callback
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from typing import Callable, Optional
@@ -15,6 +16,10 @@ from typing import Callable, Optional
 import requests
 import retico_core
 from retico_core.text import SpeechRecognitionIU
+
+# Strip reasoning blocks that "thinking" models (e.g. Qwen3) may emit, so they never
+# reach TTS.
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
 
 def resolve_model(base_url: str, configured: str) -> Optional[str]:
@@ -36,7 +41,8 @@ def chat(base_url: str, model: str, messages: list[dict], timeout: float = 60.0)
         timeout=timeout,
     )
     r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"].strip()
+    content = r.json()["choices"][0]["message"]["content"]
+    return _THINK_RE.sub("", content).strip()
 
 
 class LLMModule(retico_core.AbstractConsumingModule):
@@ -107,8 +113,13 @@ class LLMModule(retico_core.AbstractConsumingModule):
             messages = ([{"role": "system", "content": self.system}] if self.system else [])
             messages += self._history[-8:]
             reply = chat(self.base_url, self._model, messages)
-            self._history.append({"role": "assistant", "content": reply})
             print(f"[llm] user={text!r} -> {reply!r}")
+            if not reply:
+                # Empty after stripping (e.g. a thinking model that only reasoned) —
+                # don't feed "" to TTS; leave history untouched so the next turn retries.
+                print("[llm] empty reply — skipping speak (is the model in thinking mode?)")
+                return
+            self._history.append({"role": "assistant", "content": reply})
             self.speak(reply)
             self._muted_until = time.time() + self.cooldown + len(reply) / 12.0
         except Exception as exc:
