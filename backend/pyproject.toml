@@ -1,12 +1,17 @@
 [project]
 name = "vizij-retico-backend"
 version = "0.1.0"
-description = "Add your description here"
+description = "retico incremental-dialogue backend for the vizij-retico expressive face"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.139.2",
-    "retico-core>=0.2.10",
+    "retico-core>=2.0.0",
+    "retico-maai>=0.1.0",
     "uvicorn[standard]>=0.51.0",
     "websockets>=16.1.1",
 ]
+
+[tool.uv.sources]
+retico-core = { git = "https://github.com/retico-team/retico-core", rev = "main" }
+retico-maai = { git = "https://github.com/retico-team/retico-maai", rev = "main" }

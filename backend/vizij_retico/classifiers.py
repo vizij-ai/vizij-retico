@@ -49,11 +49,15 @@ class MaaiClassifiers:
         entries = list((getattr(iu, "payload", None) or {}).values())
         if not entries:
             return None
+        # Channel 1 is the real (browser) source; channel 2 is zero-fed by maai for
+        # a single source, so its projections are meaningless. Derive turn dynamics
+        # from the user's own VAP outputs: p_future falling => the user is likely to
+        # yield the floor soon.
         ch1 = entries[0]
-        ch2 = entries[1] if len(entries) > 1 else {"p_now": 0.0, "p_future": 0.0, "vad": 0.0}
         user_vad = float(ch1.get("vad", 0.0))
         p_user = float(ch1.get("p_now", 0.0))
-        p_shift = float(ch2.get("p_future", 0.0))  # agent's projected upcoming activity
+        user_future = float(ch1.get("p_future", 0.0))
+        p_shift = round(1.0 - user_future, 4)  # likelihood the user yields soon
 
         if user_vad > VAD_ACTIVE:
             state = "user_yielding" if p_shift > SHIFT_HI else "user_speaking"
