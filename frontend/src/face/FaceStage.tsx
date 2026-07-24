@@ -33,6 +33,7 @@ function ReticoBridge() {
   const [asrSource, setAsrSource] = useState<string | null>(null);
   const [pipeline, setPipeline] = useState<PipelineInfo>(null);
   const [dialogue, setDialogue] = useState<DialogueState>(null);
+  const [asrLoading, setAsrLoading] = useState(false);
   const activityRef = useRef<Record<string, number>>({});
   const rtRef = useRef(rt);
   rtRef.current = rt;
@@ -72,6 +73,19 @@ function ReticoBridge() {
     if (text) wsRef.current?.sendJSON({ type: "control", action: "say", text });
   };
 
+  const setAsrSourceRemote = (source: string) => {
+    if (source === asrSource) return;
+    if (source === "whisper") setAsrLoading(true);
+    wsRef.current?.sendJSON({ type: "control", action: "set_asr_source", source });
+  };
+
+  // Browser STT only runs when the backend is consuming it; switching to Whisper hands
+  // transcription to the backend, so release the recognizer's own mic capture.
+  useEffect(() => {
+    if (!useBrowserAsr && speech.listening) speech.stop();
+    else if (useBrowserAsr && listening && !speech.listening && speech.supported) speech.start();
+  }, [useBrowserAsr, listening, speech.listening, speech.supported, speech.start, speech.stop]);
+
   // Browser STT partials are frontend-only (not WS events) — mark activity so the
   // pipeline's ASR stage glows while the user is mid-utterance.
   useEffect(() => {
@@ -98,6 +112,12 @@ function ReticoBridge() {
       if (e.type === "dialogue.state") {
         setDialogue({ state: e.payload.state, text: e.payload.text ?? "" });
         return; // dialogue.state is pipeline telemetry, not a face-driving event
+      }
+      if (e.type === "asr.source") {
+        // Whisper loads lazily on the backend; reflect loading/active/error here.
+        setAsrLoading(e.payload.state === "loading");
+        if (e.payload.state === "active") setAsrSource(e.payload.source ?? null);
+        return;
       }
       setLast(e);
       setLog((prev) => {
@@ -165,6 +185,7 @@ function ReticoBridge() {
         log={log}
         dialogue={dialogue}
         activityRef={activityRef}
+        asrSource={asrSource}
       />
     <div className="absolute left-3 top-3 rounded bg-neutral-950/70 px-3 py-2 text-xs text-neutral-100 backdrop-blur">
       <div className="flex items-center gap-2">
@@ -177,9 +198,26 @@ function ReticoBridge() {
         >
           {listening ? "● listening" : "listen"}
         </button>
-        <span className="opacity-50">
-          asr: {asrSource ?? "…"}
-          {useBrowserAsr && !speech.supported ? " (browser STT unavailable)" : ""}
+        <span className="ml-1 flex items-center gap-1">
+          <span className="opacity-50">asr:</span>
+          {(pipeline?.asr_options ?? ["browser", "whisper"]).map((opt) => (
+            <button
+              key={opt}
+              disabled={asrLoading}
+              onClick={() => setAsrSourceRemote(opt)}
+              className={`rounded px-1.5 py-0.5 ${
+                asrSource === opt ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"
+              } ${asrLoading ? "opacity-50" : ""}`}
+              title={
+                opt === "browser"
+                  ? "Web Speech API: transcribes in the browser, sends text (Chrome)"
+                  : "retico-whisperasr: transcribes the streamed audio on the backend (local)"
+              }
+            >
+              {opt}
+            </button>
+          ))}
+          {asrLoading && <span className="text-amber-300">loading Whisper…</span>}
         </span>
       </div>
       {mic.error && <div className="mt-1 text-red-300">mic: {mic.error}</div>}

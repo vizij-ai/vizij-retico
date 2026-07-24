@@ -48,6 +48,10 @@ class BrowserASRModule(retico_core.AbstractProducingModule):
         if not text:
             return None
 
+        # Simulated turns (the type-a-user-turn debug harness) are tagged so the ASR
+        # gate forwards them whichever source is active.
+        simulated = bool(item.get("simulated"))
+
         # Mirror Whisper's incremental contract: one ADD per token, then a COMMIT.
         update = retico_core.UpdateMessage()
         words = text.split()
@@ -56,9 +60,11 @@ class BrowserASRModule(retico_core.AbstractProducingModule):
             iu = self.create_iu(prev)
             final = i == len(words) - 1
             iu.set_asr_results([word], word, 0.0, 1.0, final)
+            iu.simulated = simulated
             update.add_iu(iu, retico_core.UpdateType.ADD)
             prev = iu
         commit = self.create_iu(prev)
         commit.set_asr_results([text], text, 0.0, 1.0, True)
+        commit.simulated = simulated
         update.add_iu(commit, retico_core.UpdateType.COMMIT)
         return update

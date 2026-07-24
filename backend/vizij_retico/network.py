@@ -80,26 +80,40 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
         web_in.subscribe(consumer)
         consumer.subscribe(bridge)
 
-    # ASR: transcript -> bridge (asr.text events) + llm (spoken reply). Pick the source.
+    # ASR: both sources can run at once; the gate forwards only the active one's
+    # transcript to the bridge (asr.text events) and the LLM (spoken reply).
+    from .asr_switch import AsrGate, AsrSwitcher
+    from .browser_asr import BrowserASRModule
+
+    gate = AsrGate(get_source=lambda: hub.asr_source)
+    browser_asr = BrowserASRModule(hub)  # head producer, fed by the browser via the hub
+    browser_asr.subscribe(gate)
+    gate.subscribe(bridge)
+    gate.subscribe(llm)
+
+    def _asr_status(state: str, detail: str) -> None:
+        hub.broadcast(
+            framer.frame(
+                "asr.source",
+                {"state": state, "source": hub.asr_source, "detail": detail},
+            )
+        )
+
+    switcher = AsrSwitcher(hub, gate, web_in, on_status=_asr_status)
+    hub.set_asr_source_handler = switcher.set_source
     if CONFIG.asr_source == "whisper":
-        from retico_whisperasr import WhisperASRModule
+        switcher.set_source("whisper")  # brings Whisper up in the background
 
-        asr = WhisperASRModule(framerate=16000, language="en", silence_dur=1)
-        web_in.subscribe(asr)  # Whisper transcribes the streamed audio on the backend
-    else:
-        from .browser_asr import BrowserASRModule
-
-        asr = BrowserASRModule(hub)  # a head producer, fed by the browser via the hub
-    asr.subscribe(bridge)
-    asr.subscribe(llm)
-
-    return web_in, [web_in, turn, bc, nod, asr, llm, bridge]
+    return web_in, [web_in, turn, bc, nod, browser_asr, gate, llm, bridge]
 
 
 def start(mode: str = "fake") -> RunningNetwork:
     hub = WebSocketHub(CONFIG.host, CONFIG.port)
     hub.mode = mode
-    hub.asr_source = CONFIG.asr_source
+    # Start on the browser path even when whisper is configured: Whisper loads in the
+    # background, and the switcher flips the source once it's actually ready (so a slow
+    # or failed model load can't leave the graph with no ASR at all).
+    hub.asr_source = "browser"
     # Descriptor for the debug pipeline preview: what's wired at each stage.
     if mode == "maai":
         hub.pipeline = {
@@ -108,7 +122,7 @@ def start(mode: str = "fake") -> RunningNetwork:
             "turn_taking": "retico-maai VAP",
             "backchannel": True,
             "nod": True,
-            "asr": CONFIG.asr_source,  # browser (Web Speech) | whisper (retico-whisperasr)
+            "asr_options": ["browser", "whisper"],  # switchable at runtime
             "llm": {"model": CONFIG.llm_model or "auto-detect", "gated_on_turn": True},
             "tts": "gTTS",
             "lipsync": "amplitude (jaw_open); visemes available, not wired",

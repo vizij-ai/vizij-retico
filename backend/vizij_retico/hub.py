@@ -50,6 +50,8 @@ class WebSocketHub:
         self.say_handler: Optional[Callable[[str], None]] = None
         # Set by the network: opens the LLM floor gate for a simulated user turn.
         self.simulate_turn_handler: Optional[Callable[[], None]] = None
+        # Set by the network: switches the active ASR source at runtime.
+        self.set_asr_source_handler: Optional[Callable[[str], None]] = None
         # Advertised to clients in the hello message (e.g. "fake" | "maai").
         self.mode: str = "fake"
         # Advertised to clients so the browser only runs Web Speech STT when the
@@ -135,6 +137,9 @@ class WebSocketHub:
             threading.Thread(
                 target=self.say_handler, args=(data.get("text", ""),), daemon=True
             ).start()
+        elif typ == "control" and data.get("action") == "set_asr_source":
+            if self.set_asr_source_handler is not None:
+                self.set_asr_source_handler(str(data.get("source", "browser")))
         elif typ == "control" and data.get("action") == "simulate_user_turn":
             # Test harness: inject text as if the user just spoke it, through the full
             # graph (ASR IU -> turn gate -> LLM -> emotion -> TTS -> face). Open the floor
@@ -143,7 +148,9 @@ class WebSocketHub:
             if sim_text:
                 if self.simulate_turn_handler is not None:
                     self.simulate_turn_handler()
-                self.asr_in.put({"text": sim_text, "final": True})
+                # `simulated` keeps the harness working whichever ASR is active (the
+                # gate always forwards simulated turns).
+                self.asr_in.put({"text": sim_text, "final": True, "simulated": True})
         # other "control" / "hello" messages are accepted and ignored.
 
     # ---- outbound --------------------------------------------------------
