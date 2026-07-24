@@ -49,6 +49,7 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
     from retico_whisperasr import WhisperASRModule
 
     from .classifiers import MaaiClassifiers
+    from .dialogue import LLMModule
     from .web_input import WebInputModule
 
     web_in = WebInputModule(hub)
@@ -56,13 +57,21 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
     bc = BackchannelModule(lang="en", frame_rate=10)
     nod = NodPredictionModule(lang="en", frame_rate=10)
     asr = WhisperASRModule(framerate=16000, language="en", silence_dur=1)
+    # committed transcript -> LLM reply -> spoken via the hub's TTS say-handler
+    llm = LLMModule(
+        speak=hub.say_handler,  # set in start()
+        base_url=CONFIG.llm_base_url,
+        model=CONFIG.llm_model,
+        system=CONFIG.llm_system,
+    )
     bridge = VizijWebSocketModule(hub, classifiers=MaaiClassifiers().registry, framer=framer)
 
     for consumer in (turn, bc, nod, asr):
         web_in.subscribe(consumer)
         consumer.subscribe(bridge)
+    asr.subscribe(llm)  # transcript -> reply (llm speaks via the say-handler)
 
-    return web_in, [web_in, turn, bc, nod, asr, bridge]
+    return web_in, [web_in, turn, bc, nod, asr, llm, bridge]
 
 
 def start(mode: str = "fake") -> RunningNetwork:
