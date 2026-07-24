@@ -15,11 +15,16 @@ See [`figures/03_visemes.d2`](figures/03_visemes.d2) for the viseme-path compari
 - **Capture:** the frontend also owns mic/webcam via `getUserMedia` and streams them to the
   backend over the same WebSocket (`input.audio`/`input.video`); see §6.8.
 
-> **Published-build note.** The npm `@vizij/runtime-react@0.2.0` we install is **orchestrator-wasm
-> backed** (pre-Arora); the Arora `@vizij/runtime` device is repo `main` (0.3.0, unpublished). The
-> public API (`VizijRuntimeProvider`/`VizijRuntimeFace`/`useVizijRuntime`/`setInput`/`animateValue`/
-> `registerInputDriver`) is identical, so nothing above changes — bump to the Arora build when it
-> publishes.
+> **Published-build note.** We pin **`@vizij/runtime-react@0.1.0`** (+ `@vizij/render@0.1.0`), the
+> newest *self-consistent* published set. The latest `0.2.0` is **broken on npm**: it pulls
+> `@vizij/node-graph-authoring@0.1.1`, which imports symbols (`RIG_PIPELINE_V1_VERSION`, …) absent
+> from the only published `@vizij/utils@0.1.0`, so Vite/esbuild fails. `0.1.0` uses
+> `node-graph-authoring@0.1.0` + `orchestrator-react@0.1.0` + `utils@0.1.0` — all compatible. Both
+> lines are **orchestrator-wasm backed** (pre-Arora); the Arora `@vizij/runtime` device is repo
+> `main` (0.3.0, unpublished). The public API
+> (`VizijRuntimeProvider`/`VizijRuntimeFace`/`useVizijRuntime`/`setInput`/`animateValue`/
+> `registerInputDriver`/`inputConstraints`) is identical across all three, so nothing above
+> changes — bump when a fixed `0.2.x`/`0.3.0` publishes.
 
 ## 6.2 `VizijReticoDriver` — a `registerInputDriver` factory
 

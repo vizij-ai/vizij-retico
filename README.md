@@ -33,10 +33,12 @@ docs/       design documentation
 
 ## Status (step 1, in progress)
 
-- `frontend/` — Vite + React 19 + TS + Tailwind v4 + `@semio/ui`, consuming `@vizij/runtime-react`
-  from public npm. Face renders via `VizijRuntimeProvider`/`VizijRuntimeFace`; a dev panel drives
-  channels via `setInput`. (Awaiting a rigged GLB at `frontend/public/assets/face.glb` to verify
-  render.)
+- `frontend/` — Vite + React 19 + TS + Tailwind v4 + `@semio/ui`, consuming
+  **`@vizij/runtime-react@0.1.0`** from public npm (the latest self-consistent set; `0.2.0` is
+  broken on npm — see [docs/06](docs/06-vizij-frontend.md)). **Verified:** the Quori face GLB
+  renders via `VizijRuntimeProvider`/`VizijRuntimeFace`, and a dev panel drives the 1356 resolved
+  channels live via `setInput`. Rig exposes `/gaze/{left_right,up_down}`, `/lids/blink`, `/brow/*`,
+  `/mouth/*`, `/poses/*` — but **no head-pitch channel**, so nods/backchannels use brow/eye/pose.
 - `backend/` — uv + `retico-core` + FastAPI `/ws` echo on port **8770** (8765 is taken locally).
   Verified: `/health` + `/ws` round-trip.
 
