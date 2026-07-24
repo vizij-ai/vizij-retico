@@ -53,7 +53,7 @@ retico.nod  -> bridge: nod.cue
 retico.fer  -> bridge: emotion.fer
 retico.llm  -> bridge: emotion.affect
 retico.tts  -> bridge: speech.audio + text
-bridge -> web.driver: "JSON events  (WebSocket ws://:8765)" { style: { stroke: "#EC4D00"; stroke-width: 3 } }
+bridge -> web.driver: "JSON events  (WebSocket ws://:8770)" { style: { stroke: "#EC4D00"; stroke-width: 3 } }
 
 # ---------- cloud-key callout (legend, unconnected) ----------
 keys: ☁ NEEDS A CLOUD API KEY\n\n• LLM — recommended cloud (OpenAI / Gemini) for demo latency\n   (local HF model is the zero-key fallback)\n• Polly TTS — only on the Polly viseme path (see viseme diagram)\n• Deepgram / Google ASR — optional swap for Whisper (local, no key)\n\nEverything else runs local / CPU / no key. { class: highlight; style.font-size: 15; near: bottom-right }

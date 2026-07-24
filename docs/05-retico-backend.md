@@ -36,7 +36,7 @@ nod   = NodPredictionModule()              # retico-maai
 cam   = WebcamModule(); fer = FERModule()  # retico-vision (+ FER)
 llm   = HFLMModule(...) # or an OpenAI/Gemini module
 tts   = TTSModule(...)  # gTTS default / speechbrain offline
-bridge = VizijWebSocketModule(host="0.0.0.0", port=8765)
+bridge = VizijWebSocketModule(host="127.0.0.1", port=8770)
 
 mic.subscribe(asr); mic.subscribe(vap); mic.subscribe(bc); mic.subscribe(nod)
 cam.subscribe(fer)
@@ -91,7 +91,7 @@ class VizijWebSocketModule(retico_core.AbstractConsumingModule):
     @staticmethod
     def name(): return "Vizij WebSocket Module"
 
-    def __init__(self, host="0.0.0.0", port=8765, **kw):
+    def __init__(self, host="127.0.0.1", port=8770, **kw):
         super().__init__(**kw)
         self._clients = set()
         self._seq = 0

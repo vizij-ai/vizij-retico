@@ -1,7 +1,7 @@
 # 03 · WebSocket protocol
 
 The bridge (`VizijWebSocketModule`) broadcasts newline-free JSON text frames on a single
-WebSocket (default `ws://localhost:8765`). This document is the authoritative wire spec. It is
+WebSocket (default `ws://localhost:8770`). This document is the authoritative wire spec. It is
 transport-versioned so the driver can reject mismatches.
 
 ## 3.1 Envelope
