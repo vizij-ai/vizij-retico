@@ -5,12 +5,21 @@
 
 import type { InputDriverFactory } from "@vizij/runtime-react";
 import {
+  buildRigInputPath,
   mapNormalizedControlValue,
   mapUnitControlValue,
   type resolveFaceControls,
 } from "@vizij/runtime-react";
 import type { ReticoEvent, WsClient } from "../net/wsClient";
-import { NOD, TURN_POSTURE } from "./reticoMapping";
+import {
+  EMOTION,
+  EMOTION_ALIASES,
+  EMOTION_BLEND,
+  EMOTION_POSE,
+  LIPSYNC,
+  NOD,
+  TURN_POSTURE,
+} from "./reticoMapping";
 
 export type FaceControls = ReturnType<typeof resolveFaceControls>;
 type ScalarControl = FaceControls["eyes"]["leftX"];
@@ -20,6 +29,14 @@ export type AnimateFn = (
   target: { float: number },
   options?: { duration?: number; easing?: "linear" | "easeIn" | "easeOut" | "easeInOut" },
 ) => Promise<void>;
+
+export type SetInputFn = (path: string, value: { float: number }) => void;
+
+/** Runtime handles the driver needs beyond the resolved controls. */
+export interface RigHandles {
+  faceId: string;
+  setInput: SetInputFn;
+}
 
 const clamp = (v: number, lo = -1, hi = 1) => Math.min(hi, Math.max(lo, v));
 
@@ -34,6 +51,7 @@ export function createReticoDriver(
   ws: WsClient,
   controls: FaceControls,
   animate: AnimateFn,
+  rig: RigHandles,
 ): InputDriverFactory {
   return () => {
     let baseGaze = { x: 0, y: 0 };
@@ -42,6 +60,11 @@ export function createReticoDriver(
     let lastState: string | null = null;
     let lastBlinkAt = 0;
     const MIN_BLINK_GAP_MS = 900;
+
+    // Absolute rig path for a raw input channel (poses, jaw, …).
+    const rigPath = (p: string) => buildRigInputPath(rig.faceId, p);
+    const animRig = (p: string, v: number, ms: number) =>
+      void animate(rigPath(p), { float: v }, { duration: ms / 1000, easing: "easeInOut" });
 
     const animScalar = (
       control: ScalarControl,
@@ -108,9 +131,43 @@ export function createReticoDriver(
       setGaze(baseGaze.x, baseGaze.y, (e.payload.durationSeconds ?? 0.25) * 1000);
     };
 
-    // speech: play TTS audio (mouth lip-sync deferred until the rig's mouth
-    // channels are drivable; see docs). Audio is audible in both fake and maai modes.
+    // --- emotion: cross-fade a *blend* of the rig's composite emotion poses ----
+    let currentEmotion: string | null = null; // the active blend key (null = neutral)
+    let fadeTimer: number | null = null;
+    const setEmotion = (name: string, intensity: number) => {
+      const key = EMOTION_ALIASES[name] ?? name;
+      // Resolve to a blend: an explicit entry, else an identity blend for a base pose,
+      // else neutral (empty → everything fades to 0).
+      const blend =
+        EMOTION_BLEND[key] ?? (EMOTION_POSE[key as keyof typeof EMOTION_POSE] ? { [key]: 1 } : {});
+      const amt = clamp(intensity, 0, 1);
+      // Every base pose fades to its blended weight × intensity (0 if not in the blend).
+      for (const [k, path] of Object.entries(EMOTION_POSE)) {
+        const w = (blend as Record<string, number>)[k] ?? 0;
+        animRig(path, clamp(w * amt, 0, 1), EMOTION.fadeMs);
+      }
+      currentEmotion = Object.keys(blend).length ? key : null;
+    };
+    const onEmotion = (e: ReticoEvent) => {
+      if (fadeTimer !== null) {
+        window.clearTimeout(fadeTimer);
+        fadeTimer = null;
+      }
+      setEmotion(e.payload.emotion ?? "neutral", Number(e.payload.intensity ?? 0.8));
+    };
+    const scheduleEmotionRelease = () => {
+      if (!currentEmotion) return;
+      if (fadeTimer !== null) window.clearTimeout(fadeTimer);
+      fadeTimer = window.setTimeout(() => {
+        setEmotion("neutral", 0);
+        fadeTimer = null;
+      }, EMOTION.holdAfterSpeechMs);
+    };
+
+    // --- speech: play TTS audio and drive jaw_open from its amplitude ----------
     let audioCtx: AudioContext | null = null;
+    const setJaw = (v: number) =>
+      rig.setInput(rigPath(LIPSYNC.channel), { float: clamp(v, 0, LIPSYNC.max) });
     const onSpeech = async (e: ReticoEvent) => {
       try {
         if (!audioCtx) audioCtx = new AudioContext();
@@ -118,8 +175,32 @@ export function createReticoDriver(
         const buf = await audioCtx.decodeAudioData(base64ToArrayBuffer(e.payload.data));
         const src = audioCtx.createBufferSource();
         src.buffer = buf;
-        src.connect(audioCtx.destination);
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 512;
+        const data = new Uint8Array(analyser.fftSize);
+        src.connect(analyser);
+        analyser.connect(audioCtx.destination);
+
+        let level = 0;
+        let raf = 0;
+        const pump = () => {
+          analyser.getByteTimeDomainData(data);
+          let sum = 0;
+          for (let i = 0; i < data.length; i++) {
+            const s = (data[i] - 128) / 128;
+            sum += s * s;
+          }
+          const rms = Math.sqrt(sum / data.length); // ~0..0.3 for speech
+          level += (rms * LIPSYNC.gain - level) * LIPSYNC.smoothing;
+          setJaw(level);
+          raf = requestAnimationFrame(pump);
+        };
+        src.onended = () => {
+          cancelAnimationFrame(raf);
+          setJaw(0); // close the mouth
+        };
         src.start();
+        pump();
       } catch {
         /* ignore */
       }
@@ -135,8 +216,13 @@ export function createReticoDriver(
           return onNod(e);
         case "gaze.intent":
           return onGaze(e);
+        case "emotion.affect":
+        case "emotion.fer":
+          return onEmotion(e);
         case "speech.audio":
           return void onSpeech(e);
+        case "speech.end":
+          return scheduleEmotionRelease();
         default:
           return;
       }
@@ -153,6 +239,12 @@ export function createReticoDriver(
         started = false;
         unsub?.();
         unsub = null;
+        if (fadeTimer !== null) {
+          window.clearTimeout(fadeTimer);
+          fadeTimer = null;
+        }
+        setEmotion("neutral", 0); // release any held expression
+        setJaw(0);
         audioCtx?.close().catch(() => {});
         audioCtx = null;
       },

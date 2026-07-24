@@ -47,6 +47,7 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
     # Imported lazily so the fake path never needs torch/maai installed.
     from retico_maai import TurnTakingModule, BackchannelModule, NodPredictionModule
 
+    from .affect import make_emote_handler
     from .classifiers import MaaiClassifiers
     from .dialogue import LLMModule
     from .web_input import WebInputModule
@@ -61,8 +62,12 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
         base_url=CONFIG.llm_base_url,
         model=CONFIG.llm_model,
         system=CONFIG.llm_system,
+        emote=make_emote_handler(hub, framer),  # reply text -> emotion.affect
     )
-    bridge = VizijWebSocketModule(hub, classifiers=MaaiClassifiers().registry, framer=framer)
+    # Feed the derived turn state to the LLM so it only replies when the floor is the
+    # agent's (agent_should_speak), instead of on every ASR commit.
+    classifiers = MaaiClassifiers(on_turn_state=llm.notify_turn)
+    bridge = VizijWebSocketModule(hub, classifiers=classifiers.registry, framer=framer)
 
     # Audio streams to the backend for turn-taking/backchannel/nod regardless of ASR.
     for consumer in (turn, bc, nod):

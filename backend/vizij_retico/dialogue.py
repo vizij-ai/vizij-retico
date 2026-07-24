@@ -60,6 +60,9 @@ class LLMModule(retico_core.AbstractConsumingModule):
     def input_ius():
         return [SpeechRecognitionIU]
 
+    # Turn states (from the VAP turn-taking model) in which the agent may take the floor.
+    GO_STATES = frozenset({"agent_should_speak"})
+
     def __init__(
         self,
         speak: Callable[[str], None],
@@ -67,19 +70,36 @@ class LLMModule(retico_core.AbstractConsumingModule):
         model: str = "",
         system: str = "",
         cooldown: float = 3.0,
+        gate_on_turn: bool = True,
+        max_wait: float = 4.0,
+        emote: Optional[Callable[[str], None]] = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self.speak = speak
+        # Optional: derive + broadcast the agent's affect from the reply (face expression).
+        self.emote = emote
         self.base_url = base_url.rstrip("/")
         self.configured_model = model
         self.system = system
         self.cooldown = cooldown
+        # Wait for the turn-taking model to yield the floor before replying, rather than
+        # replying the instant ASR commits. max_wait bounds the wait so a reply always
+        # comes even if the model never emits a clean shift.
+        self.gate_on_turn = gate_on_turn
+        self.max_wait = max_wait
         self._tokens: list[str] = []
         self._history: list[dict] = []
         self._model: Optional[str] = None
         self._busy = False
         self._muted_until = 0.0
+        # Transcript waiting for the agent's turn (guarded by _lock; notify_turn is
+        # called from the bridge thread while process_update runs on the ASR thread).
+        self._pending: Optional[str] = None
+        self._released = False  # gate opened (turn yielded or max_wait elapsed)
+        self._turn_state = ""
+        self._timer: Optional[threading.Timer] = None
+        self._lock = threading.Lock()
 
     def process_update(self, update_message):
         for iu, ut in update_message:
@@ -91,15 +111,60 @@ class LLMModule(retico_core.AbstractConsumingModule):
                 text = " ".join(self._tokens).strip()
                 self._tokens = []
                 if text:
-                    self._maybe_reply(text)
+                    self._enqueue(text)
         return None
 
-    def _maybe_reply(self, text: str) -> None:
-        # Skip while a reply is in flight or during the post-reply cooldown (avoids
-        # replying to the agent's own TTS bleeding into the mic).
-        if self._busy or time.time() < self._muted_until:
-            return
-        self._busy = True
+    def notify_turn(self, state: str) -> None:
+        """Called by the turn-taking classifier on each turn.state. Opens the gate once
+        the floor is the agent's; then tries to reply."""
+        with self._lock:
+            self._turn_state = state
+            if self._pending is None or state not in self.GO_STATES:
+                return
+            self._released = True
+        self._try()
+
+    def _enqueue(self, text: str) -> None:
+        with self._lock:
+            self._pending = text
+            self._released = (not self.gate_on_turn) or self._turn_state in self.GO_STATES
+            # Bound the wait: reply even if the turn model never emits a clean shift.
+            # A self-contained timer means the gate doesn't depend on the VAP heartbeat.
+            self._arm_locked(0.0 if self._released else self.max_wait)
+        self._try()
+
+    def _wake(self) -> None:
+        """Timer callback: open the gate (max_wait elapsed) and retry."""
+        with self._lock:
+            if self._pending is not None:
+                self._released = True
+        self._try()
+
+    def _arm_locked(self, delay: float) -> None:
+        if self._timer is not None:
+            self._timer.cancel()
+        self._timer = threading.Timer(max(0.0, delay), self._wake)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def _try(self) -> None:
+        """Fire the pending reply if the gate is open and we're not busy/cooling down;
+        otherwise re-arm to retry once the block clears."""
+        with self._lock:
+            if self._pending is None or not self._released:
+                return
+            now = time.monotonic()
+            if self._busy or now < self._muted_until:
+                # Blocked by an in-flight reply or the post-reply cooldown — retry later.
+                self._arm_locked((self._muted_until - now) if now < self._muted_until else 0.25)
+                return
+            text = self._pending
+            self._pending = None
+            self._released = False
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+            self._busy = True
         threading.Thread(target=self._reply, args=(text,), daemon=True).start()
 
     def _reply(self, text: str) -> None:
@@ -120,9 +185,15 @@ class LLMModule(retico_core.AbstractConsumingModule):
                 print("[llm] empty reply — skipping speak (is the model in thinking mode?)")
                 return
             self._history.append({"role": "assistant", "content": reply})
+            # Express affect just before speaking so the face is set as the audio starts.
+            if self.emote is not None:
+                self.emote(reply)
             self.speak(reply)
-            self._muted_until = time.time() + self.cooldown + len(reply) / 12.0
+            self._muted_until = time.monotonic() + self.cooldown + len(reply) / 12.0
         except Exception as exc:
             print(f"[llm] error: {exc}")
         finally:
             self._busy = False
+            # A transcript may have queued up while we were replying — retry it (it will
+            # respect the cooldown window we just set).
+            self._try()

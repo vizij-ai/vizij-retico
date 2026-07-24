@@ -39,9 +39,63 @@ export const BACKCHANNEL = { browRaise: 0.8, upMs: 110, downMs: 240 };
 // nod.cue → eye "dip" surrogate (down then back) per cycle, since there's no head.
 export const NOD = { dip: 0.5, perCycleMs: 190 };
 
-// speech.audio → jaw opening driven by audio amplitude (this rig has /mouth/chin,
-// not phoneme viseme poses). gain scales RMS (~0..0.25) to the channel; clamp caps it.
-export const LIPSYNC = { gain: 6.0, max: 0.9, intervalMs: 30 };
+// The rig's base emotion poses (verified on quori_latest: each blends brow+eye+mouth
+// into a legible expression, so we drive these rather than the subtle individual
+// brow/mouth channels). These are the primitives that blends are built from.
+export const EMOTION_POSE: Record<string, string> = {
+  happy: "/poses/pose_d_happy_d.weight",
+  sad: "/poses/pose_d_sad_d.weight",
+  anger: "/poses/pose_d_anger_d.weight",
+  surprise: "/poses/pose_d_surprise_d.weight",
+  concerned: "/poses/pose_d_concerned_d.weight",
+  sleepy: "/poses/pose_d_sleepy_d.weight",
+};
+
+// emotion.affect / emotion.fer → a *blend* of base pose weights (0..1 each). Because the
+// poses are additive, emotions the rig has no dedicated pose for are expressed as
+// mixtures (e.g. fear ≈ surprise + concern). intensity scales the whole blend; the driver
+// zeroes every pose not in the active blend. "neutral" (or unknown) = {} = all → 0.
+export type EmotionBlend = Partial<Record<keyof typeof EMOTION_POSE, number>>;
+export const EMOTION_BLEND: Record<string, EmotionBlend> = {
+  // base emotions (identity blends)
+  happy: { happy: 1.0 },
+  sad: { sad: 1.0 },
+  anger: { anger: 1.0 },
+  surprise: { surprise: 1.0 },
+  concerned: { concerned: 1.0 },
+  sleepy: { sleepy: 1.0 },
+  neutral: {},
+  // derived blends
+  fear: { surprise: 0.6, concerned: 0.5 },
+  excited: { happy: 0.8, surprise: 0.5 },
+  disgust: { concerned: 0.7, anger: 0.4 },
+  confused: { concerned: 0.6, surprise: 0.35 },
+  content: { happy: 0.45 },
+  bored: { sleepy: 0.6, sad: 0.2 },
+};
+// Map common synonyms (e.g. from a FER model) onto a key in EMOTION_BLEND.
+export const EMOTION_ALIASES: Record<string, string> = {
+  joy: "happy",
+  angry: "anger",
+  fearful: "fear",
+  scared: "fear",
+  surprised: "surprise",
+  worried: "concerned",
+  tired: "sleepy",
+  disgusted: "disgust",
+};
+export const EMOTION = { holdAfterSpeechMs: 1200, fadeMs: 500 };
+
+// speech.audio → jaw opening driven by playback amplitude. jaw_open is 0..1; gain scales
+// RMS (~0..0.25) up to that range, clamped by max. Verified: jaw_open cleanly opens the
+// mouth. (Phoneme viseme poses /poses/pose_{a,e,i,o,u,…}.weight exist for higher-fidelity
+// lip-sync later, but need phoneme timing we don't get from gTTS.)
+export const LIPSYNC = {
+  channel: "/standard/vizij/mouth/morph/jaw_open",
+  gain: 3.5,
+  max: 1.0,
+  smoothing: 0.5, // 0..1 low-pass toward the new amplitude each frame
+};
 
 export interface FaceChannels {
   gazeX?: string;

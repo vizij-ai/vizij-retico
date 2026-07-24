@@ -14,7 +14,7 @@ are the *source-side* derivations).
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import retico_core
 
@@ -30,10 +30,12 @@ NOD_THRESHOLD = 0.6       # p_nod_* rising edge above this => nod cue
 class MaaiClassifiers:
     """Stateful (edge-detecting) classifiers, exposed as a name→fn registry."""
 
-    def __init__(self) -> None:
+    def __init__(self, on_turn_state: Optional[Callable[[str], None]] = None) -> None:
         self._bc_armed = True
         self._nod_armed = True
         self._asr_tokens: list[str] = []
+        # Optional sink for the derived turn state (e.g. the LLM's floor gate).
+        self._on_turn_state = on_turn_state
 
     @property
     def registry(self) -> dict[str, Any]:
@@ -94,6 +96,9 @@ class MaaiClassifiers:
             state = "agent_should_speak"
         else:
             state = "mutual_silence"
+
+        if self._on_turn_state is not None:
+            self._on_turn_state(state)
 
         return framer.frame(
             "turn.state",

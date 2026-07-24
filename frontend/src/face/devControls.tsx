@@ -15,6 +15,7 @@ export function DevControls() {
   const {
     ready,
     setInput,
+    animateValue,
     stagePoseNeutral,
     inputConstraints,
     outputPaths,
@@ -40,6 +41,21 @@ export function DevControls() {
     console.log("output paths:", outputPaths);
     console.log("controllers:", controllers);
     console.groupEnd();
+    // Dev aid: expose the rig's inputs + a setter for inspection from the console/tooling.
+    (window as unknown as Record<string, unknown>).__vizijRig = {
+      inputPaths: allPaths,
+      inputConstraints,
+      outputPaths,
+      controllers,
+      faceId,
+      set: (path: string, v: number) =>
+        setInput(buildRigInputPath(faceId ?? "face", path), { float: v }),
+      animate: (path: string, v: number, ms = 400) =>
+        animateValue(buildRigInputPath(faceId ?? "face", path), { float: v }, {
+          duration: ms / 1000,
+          easing: "easeInOut",
+        }),
+    };
   }, [ready, allPaths, outputPaths, controllers, isAnimationActive]);
 
   const filtered = useMemo(() => {

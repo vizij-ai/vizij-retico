@@ -108,13 +108,16 @@ function ReticoBridge() {
   useEffect(() => {
     if (!rt.ready || !wsRef.current || startedRef.current) return;
     startedRef.current = true;
-    const { registerInputDriver, animateValue, assetBundle, faceId, inputConstraints } =
+    const { registerInputDriver, animateValue, setInput, assetBundle, faceId, inputConstraints } =
       rtRef.current;
     const controls = resolveFaceControls(assetBundle, faceId, inputConstraints);
     console.log("[vizij-retico] resolved face controls", controls);
     const lifecycle = registerInputDriver(
       "retico",
-      createReticoDriver(wsRef.current, controls, animateValue),
+      createReticoDriver(wsRef.current, controls, animateValue, {
+        faceId: faceId ?? "face",
+        setInput,
+      }),
     );
     lifecycle.start(); // idempotent
     return () => {
