@@ -48,11 +48,16 @@ class WebSocketHub:
 
         # Set by the network to handle a "say" control message (text -> speech events).
         self.say_handler: Optional[Callable[[str], None]] = None
+        # Set by the network: opens the LLM floor gate for a simulated user turn.
+        self.simulate_turn_handler: Optional[Callable[[], None]] = None
         # Advertised to clients in the hello message (e.g. "fake" | "maai").
         self.mode: str = "fake"
         # Advertised to clients so the browser only runs Web Speech STT when the
         # backend is actually consuming it ("browser" | "whisper").
         self.asr_source: str = "browser"
+        # Descriptor of the active pipeline stages (set by the network); sent in hello so
+        # the debug pipeline preview can show what's wired.
+        self.pipeline: dict[str, Any] = {}
 
     # ---- server plumbing -------------------------------------------------
 
@@ -80,6 +85,7 @@ class WebSocketHub:
                         "protocol": 1,
                         "mode": self.mode,
                         "asr_source": self.asr_source,
+                        "pipeline": self.pipeline,
                     }
                 )
             )
@@ -129,6 +135,15 @@ class WebSocketHub:
             threading.Thread(
                 target=self.say_handler, args=(data.get("text", ""),), daemon=True
             ).start()
+        elif typ == "control" and data.get("action") == "simulate_user_turn":
+            # Test harness: inject text as if the user just spoke it, through the full
+            # graph (ASR IU -> turn gate -> LLM -> emotion -> TTS -> face). Open the floor
+            # gate first so the reply fires promptly without live VAP audio.
+            sim_text = (data.get("text") or "").strip()
+            if sim_text:
+                if self.simulate_turn_handler is not None:
+                    self.simulate_turn_handler()
+                self.asr_in.put({"text": sim_text, "final": True})
         # other "control" / "hello" messages are accepted and ignored.
 
     # ---- outbound --------------------------------------------------------

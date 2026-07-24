@@ -73,12 +73,16 @@ class LLMModule(retico_core.AbstractConsumingModule):
         gate_on_turn: bool = True,
         max_wait: float = 4.0,
         emote: Optional[Callable[[str], None]] = None,
+        status: Optional[Callable[[str, str], None]] = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self.speak = speak
         # Optional: derive + broadcast the agent's affect from the reply (face expression).
         self.emote = emote
+        # Optional: report dialogue state (waiting_for_turn | thinking | spoke) for the
+        # debug pipeline preview.
+        self.status = status
         self.base_url = base_url.rstrip("/")
         self.configured_model = model
         self.system = system
@@ -128,9 +132,12 @@ class LLMModule(retico_core.AbstractConsumingModule):
         with self._lock:
             self._pending = text
             self._released = (not self.gate_on_turn) or self._turn_state in self.GO_STATES
+            gated = not self._released
             # Bound the wait: reply even if the turn model never emits a clean shift.
             # A self-contained timer means the gate doesn't depend on the VAP heartbeat.
             self._arm_locked(0.0 if self._released else self.max_wait)
+        if gated and self.status is not None:
+            self.status("waiting_for_turn", text)
         self._try()
 
     def _wake(self) -> None:
@@ -169,6 +176,8 @@ class LLMModule(retico_core.AbstractConsumingModule):
 
     def _reply(self, text: str) -> None:
         try:
+            if self.status is not None:
+                self.status("thinking", text)
             if self._model is None:
                 self._model = resolve_model(self.base_url, self.configured_model)
             if not self._model:
@@ -188,6 +197,8 @@ class LLMModule(retico_core.AbstractConsumingModule):
             # Express affect just before speaking so the face is set as the audio starts.
             if self.emote is not None:
                 self.emote(reply)
+            if self.status is not None:
+                self.status("spoke", reply)
             self.speak(reply)
             self._muted_until = time.monotonic() + self.cooldown + len(reply) / 12.0
         except Exception as exc:

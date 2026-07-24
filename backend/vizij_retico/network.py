@@ -57,13 +57,19 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
     bc = BackchannelModule(lang="en", frame_rate=10)
     nod = NodPredictionModule(lang="en", frame_rate=10)
     # committed transcript -> LLM reply -> spoken via the hub's TTS say-handler
+    def _status(state: str, detail: str = "") -> None:
+        hub.broadcast(framer.frame("dialogue.state", {"state": state, "text": detail}))
+
     llm = LLMModule(
         speak=hub.say_handler,  # set in start()
         base_url=CONFIG.llm_base_url,
         model=CONFIG.llm_model,
         system=CONFIG.llm_system,
         emote=make_emote_handler(hub, framer),  # reply text -> emotion.affect
+        status=_status,  # dialogue.state events for the pipeline preview
     )
+    # Test harness: a simulated user turn opens the floor gate so the reply is prompt.
+    hub.simulate_turn_handler = lambda: llm.notify_turn("agent_should_speak")
     # Feed the derived turn state to the LLM so it only replies when the floor is the
     # agent's (agent_should_speak), instead of on every ASR commit.
     classifiers = MaaiClassifiers(on_turn_state=llm.notify_turn)
@@ -94,6 +100,21 @@ def start(mode: str = "fake") -> RunningNetwork:
     hub = WebSocketHub(CONFIG.host, CONFIG.port)
     hub.mode = mode
     hub.asr_source = CONFIG.asr_source
+    # Descriptor for the debug pipeline preview: what's wired at each stage.
+    if mode == "maai":
+        hub.pipeline = {
+            "mode": "maai",
+            "capture": "browser mic · 16 kHz PCM",
+            "turn_taking": "retico-maai VAP",
+            "backchannel": True,
+            "nod": True,
+            "asr": CONFIG.asr_source,  # browser (Web Speech) | whisper (retico-whisperasr)
+            "llm": {"model": CONFIG.llm_model or "auto-detect", "gated_on_turn": True},
+            "tts": "gTTS",
+            "lipsync": "amplitude (jaw_open); visemes available, not wired",
+        }
+    else:
+        hub.pipeline = {"mode": "fake", "turn_taking": "synthetic (FakeTurnModule)", "tts": "gTTS"}
     framer = EventFramer()  # shared by the bridge and the TTS say-handler
     hub.say_handler = make_say_handler(hub, framer)
     hub.start()
