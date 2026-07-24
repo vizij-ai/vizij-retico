@@ -33,6 +33,8 @@ class WebSocketHub:
         # Inbound media from the browser (thread-safe; drained by WebInputModule).
         self.audio_in: "queue.Queue[bytes]" = queue.Queue()
         self.video_in: "queue.Queue[bytes]" = queue.Queue()
+        # Browser Web Speech API transcripts (drained by BrowserASRModule): {text, final}.
+        self.asr_in: "queue.Queue[dict]" = queue.Queue()
 
         # Audio format most recently advertised by a client (browser capture).
         self.audio_rate = 16000
@@ -48,6 +50,9 @@ class WebSocketHub:
         self.say_handler: Optional[Callable[[str], None]] = None
         # Advertised to clients in the hello message (e.g. "fake" | "maai").
         self.mode: str = "fake"
+        # Advertised to clients so the browser only runs Web Speech STT when the
+        # backend is actually consuming it ("browser" | "whisper").
+        self.asr_source: str = "browser"
 
     # ---- server plumbing -------------------------------------------------
 
@@ -69,7 +74,13 @@ class WebSocketHub:
             self._clients.add(sock)
             await sock.send_text(
                 json.dumps(
-                    {"type": "hello", "service": "vizij-retico", "protocol": 1, "mode": self.mode}
+                    {
+                        "type": "hello",
+                        "service": "vizij-retico",
+                        "protocol": 1,
+                        "mode": self.mode,
+                        "asr_source": self.asr_source,
+                    }
                 )
             )
             try:
@@ -108,6 +119,11 @@ class WebSocketHub:
             b64 = payload.get("data")
             if b64:
                 self.video_in.put(base64.b64decode(b64))
+        elif typ == "input.asr":
+            # Browser Web Speech API transcript. Only final results feed the graph;
+            # interim results are shown live in the browser panel (no round trip).
+            if payload.get("final") and (payload.get("text") or "").strip():
+                self.asr_in.put({"text": payload["text"], "final": True})
         elif typ == "control" and data.get("action") == "say" and self.say_handler:
             # Run TTS off the asyncio loop (gTTS makes a blocking network call).
             threading.Thread(

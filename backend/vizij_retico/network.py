@@ -46,7 +46,6 @@ def _build_fake(hub: WebSocketHub, framer: EventFramer):
 def _build_maai(hub: WebSocketHub, framer: EventFramer):
     # Imported lazily so the fake path never needs torch/maai installed.
     from retico_maai import TurnTakingModule, BackchannelModule, NodPredictionModule
-    from retico_whisperasr import WhisperASRModule
 
     from .classifiers import MaaiClassifiers
     from .dialogue import LLMModule
@@ -56,7 +55,6 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
     turn = TurnTakingModule(mode="vap_mc", lang="en", frame_rate=10)
     bc = BackchannelModule(lang="en", frame_rate=10)
     nod = NodPredictionModule(lang="en", frame_rate=10)
-    asr = WhisperASRModule(framerate=16000, language="en", silence_dur=1)
     # committed transcript -> LLM reply -> spoken via the hub's TTS say-handler
     llm = LLMModule(
         speak=hub.say_handler,  # set in start()
@@ -66,10 +64,23 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
     )
     bridge = VizijWebSocketModule(hub, classifiers=MaaiClassifiers().registry, framer=framer)
 
-    for consumer in (turn, bc, nod, asr):
+    # Audio streams to the backend for turn-taking/backchannel/nod regardless of ASR.
+    for consumer in (turn, bc, nod):
         web_in.subscribe(consumer)
         consumer.subscribe(bridge)
-    asr.subscribe(llm)  # transcript -> reply (llm speaks via the say-handler)
+
+    # ASR: transcript -> bridge (asr.text events) + llm (spoken reply). Pick the source.
+    if CONFIG.asr_source == "whisper":
+        from retico_whisperasr import WhisperASRModule
+
+        asr = WhisperASRModule(framerate=16000, language="en", silence_dur=1)
+        web_in.subscribe(asr)  # Whisper transcribes the streamed audio on the backend
+    else:
+        from .browser_asr import BrowserASRModule
+
+        asr = BrowserASRModule(hub)  # a head producer, fed by the browser via the hub
+    asr.subscribe(bridge)
+    asr.subscribe(llm)
 
     return web_in, [web_in, turn, bc, nod, asr, llm, bridge]
 
@@ -77,6 +88,7 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
 def start(mode: str = "fake") -> RunningNetwork:
     hub = WebSocketHub(CONFIG.host, CONFIG.port)
     hub.mode = mode
+    hub.asr_source = CONFIG.asr_source
     framer = EventFramer()  # shared by the bridge and the TTS say-handler
     hub.say_handler = make_say_handler(hub, framer)
     hub.start()

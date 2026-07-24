@@ -12,6 +12,13 @@ class Config:
     # 8765 is taken by the local claude-sc gateway in this environment; use 8770.
     port: int = int(os.environ.get("VIZIJ_RETICO_PORT", "8770"))
 
+    # Which ASR feeds the LLM transcript:
+    #  - "browser": Web Speech API in the browser -> text over the WebSocket (default;
+    #    lower latency, no local Whisper/webrtcvad, but Chrome + internet).
+    #  - "whisper": retico-whisperasr transcribes the streamed audio on the backend
+    #    (fully local/offline). Audio is streamed to the backend for turn-taking either way.
+    asr_source: str = os.environ.get("ASR_SOURCE", "browser")
+
     # LLM (OpenAI-compatible; LM Studio by default). Swap base_url/model for a cloud
     # provider later. Empty model => auto-detect the first loaded model.
     llm_base_url: str = os.environ.get("LLM_BASE_URL", "http://localhost:1234/v1")

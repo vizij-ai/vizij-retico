@@ -9,6 +9,7 @@ import {
 import { WsClient, type ReticoEvent, type WsStatus } from "../net/wsClient";
 import { createReticoDriver } from "../drivers/VizijReticoDriver";
 import { useMicCapture } from "../capture/useMicCapture";
+import { useBrowserSpeech } from "../capture/useBrowserSpeech";
 import { DevControls } from "./devControls";
 import { ExplainPanel } from "./ExplainPanel";
 
@@ -29,12 +30,28 @@ function ReticoBridge() {
   const [last, setLast] = useState<ReticoEvent | null>(null);
   const [log, setLog] = useState<ReticoEvent[]>([]);
   const [mode, setMode] = useState<string | null>(null);
+  const [asrSource, setAsrSource] = useState<string | null>(null);
   const rtRef = useRef(rt);
   rtRef.current = rt;
   const startedRef = useRef(false);
   const wsRef = useRef<WsClient | null>(null);
   const mic = useMicCapture(() => wsRef.current);
+  const speech = useBrowserSpeech(() => wsRef.current);
   const [sayText, setSayText] = useState("Hi there! I can talk now.");
+
+  // One "listen" toggle: always stream audio (for turn-taking); also run browser STT
+  // when the backend is in browser-ASR mode.
+  const useBrowserAsr = asrSource !== "whisper";
+  const listening = mic.active;
+  const toggleListen = () => {
+    if (listening) {
+      mic.stop();
+      speech.stop();
+    } else {
+      mic.start();
+      if (useBrowserAsr && speech.supported) speech.start();
+    }
+  };
 
   const say = () => {
     const text = sayText.trim();
@@ -51,6 +68,7 @@ function ReticoBridge() {
     const offEvent = ws.addEventListener((e) => {
       if ((e as { type?: string }).type === "hello") {
         setMode((e as { mode?: string }).mode ?? null);
+        setAsrSource((e as { asr_source?: string }).asr_source ?? null);
         return;
       }
       setLast(e);
@@ -108,20 +126,25 @@ function ReticoBridge() {
   const dot = status === "open" ? "bg-emerald-400" : status === "connecting" ? "bg-amber-400" : "bg-red-400";
   return (
     <>
-      <ExplainPanel mode={mode} log={log} />
+      <ExplainPanel mode={mode} log={log} listening={listening} partial={speech.partial} />
     <div className="absolute left-3 top-3 rounded bg-neutral-950/70 px-3 py-2 text-xs text-neutral-100 backdrop-blur">
       <div className="flex items-center gap-2">
         <span className={`inline-block h-2 w-2 rounded-full ${dot}`} />
         <span>retico {status}</span>
         <span className="opacity-60">{WS_URL}</span>
         <button
-          className={`ml-2 rounded px-2 py-0.5 ${mic.active ? "bg-emerald-600" : "bg-neutral-700"} hover:opacity-90`}
-          onClick={() => (mic.active ? mic.stop() : mic.start())}
+          className={`ml-2 rounded px-2 py-0.5 ${listening ? "bg-emerald-600" : "bg-neutral-700"} hover:opacity-90`}
+          onClick={toggleListen}
         >
-          {mic.active ? "● mic on" : "mic off"}
+          {listening ? "● listening" : "listen"}
         </button>
+        <span className="opacity-50">
+          asr: {asrSource ?? "…"}
+          {useBrowserAsr && !speech.supported ? " (browser STT unavailable)" : ""}
+        </span>
       </div>
       {mic.error && <div className="mt-1 text-red-300">mic: {mic.error}</div>}
+      {speech.error && <div className="mt-1 text-red-300">stt: {speech.error}</div>}
       <div className="mt-2 flex gap-1">
         <input
           className="w-56 rounded bg-neutral-800 px-2 py-1 text-neutral-100 outline-none"

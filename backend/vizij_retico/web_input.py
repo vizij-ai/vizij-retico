@@ -31,10 +31,17 @@ class WebInputModule(retico_core.AbstractProducingModule):
     def output_iu():
         return AudioIU
 
-    def __init__(self, hub: WebSocketHub, sample_width: int = 2, **kwargs) -> None:
+    def __init__(
+        self, hub: WebSocketHub, sample_width: int = 2, frame_ms: int = 10, **kwargs
+    ) -> None:
         super().__init__(**kwargs)
         self.hub = hub
         self.sample_width = sample_width
+        # Re-chunk into fixed frames. The browser worklet posts 128-sample (8 ms)
+        # blocks, but webrtcvad (retico-whisperasr's VAD) and retico-maai both require
+        # exact 10/20/30 ms frames — so we buffer and slice to a constant frame here.
+        self.frame_ms = frame_ms
+        self._buf = bytearray()
 
     def process_update(self, _):
         try:
@@ -43,7 +50,21 @@ class WebInputModule(retico_core.AbstractProducingModule):
             return None
         rate = self.hub.audio_rate
         channels = max(1, self.hub.audio_channels)
-        nframes = len(sample) // (self.sample_width * channels)
-        output_iu = self.create_iu()
-        output_iu.set_audio(sample, nframes, rate, self.sample_width)
-        return retico_core.UpdateMessage.from_iu(output_iu, retico_core.UpdateType.ADD)
+        frame_samples = rate * self.frame_ms // 1000
+        frame_bytes = frame_samples * self.sample_width * channels
+        if frame_bytes <= 0:
+            return None
+
+        self._buf.extend(sample)
+        if len(self._buf) < frame_bytes:
+            return None
+
+        update = retico_core.UpdateMessage()
+        while len(self._buf) >= frame_bytes:
+            frame = bytes(self._buf[:frame_bytes])
+            del self._buf[:frame_bytes]
+            nframes = len(frame) // (self.sample_width * channels)
+            output_iu = self.create_iu()
+            output_iu.set_audio(frame, nframes, rate, self.sample_width)
+            update.add_iu(output_iu, retico_core.UpdateType.ADD)
+        return update

@@ -53,7 +53,17 @@ export function describeEvent(e: ReticoEvent): { title: string; detail: string }
   }
 }
 
-export function ExplainPanel({ mode, log }: { mode: string | null; log: ReticoEvent[] }) {
+export function ExplainPanel({
+  mode,
+  log,
+  listening = false,
+  partial = "",
+}: {
+  mode: string | null;
+  log: ReticoEvent[];
+  listening?: boolean;
+  partial?: string;
+}) {
   const current = log.find((e) => e.type === "turn.state");
   const heard = log.find((e) => e.type === "asr.text");
   const modeNote =
@@ -71,6 +81,12 @@ export function ExplainPanel({ mode, log }: { mode: string | null; log: ReticoEv
       >
         {modeNote}
       </div>
+
+      {partial ? (
+        <div className="mb-2 rounded bg-indigo-900/50 p-2">🎙 listening: “{partial}” …</div>
+      ) : (
+        listening && <div className="mb-2 rounded bg-indigo-900/40 p-2 opacity-70">🎙 listening…</div>
+      )}
 
       {heard && (
         <div className="mb-2 rounded bg-sky-900/50 p-2">
