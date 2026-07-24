@@ -1,0 +1,32 @@
+...@_brand.d2
+
+direction: right
+
+retico_text: retico\nreply text + TTS audio { class: highlight }
+
+# ---- Option A: client-side ----
+a: Option A — client-side (recommended default) {
+  class: group
+  a1: ship audio + text over WS { class: neutral }
+  a2: phoneme-core\n(g2p_en → phoneme timeline) { class: primary }
+  a3: useVisemeMouth\nmode "baseline" (align if CPU allows) { class: primary }
+  a4: viseme pose weights { class: emphasis }
+  a1 -> a2 -> a3 -> a4
+  tag: "✔ no key · reuses ~500 LOC · ~1 day" { class: emphasis; style.font-size: 13 }
+}
+
+# ---- Option B: Polly ----
+b: Option B — Polly visemes (viable, cloud) {
+  class: group
+  b1: send reply text to AWS Polly { class: neutral }
+  b2: Polly → audio + viseme marks { class: highlight }
+  b3: "@vizij/speech-react\nfetchVisemeData()" { class: primary }
+  b4: viseme pose weights { class: emphasis }
+  b1 -> b2 -> b3 -> b4
+  tag: "☁ needs AWS Polly key/backend · higher-fidelity marks" { class: highlight; style.font-size: 13 }
+}
+
+retico_text -> a.a1: audio + text
+retico_text -> b.b1: text
+
+both: Both feed the SAME viseme pose-weight channels (rig/<faceId>/poses/<v>.weight).\nStart on A for a no-dependency MVP; B is a drop-in upgrade if Polly is available. { class: neutral; near: bottom-center; style.font-size: 15 }

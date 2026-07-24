@@ -1,0 +1,59 @@
+...@_brand.d2
+
+# ---------- PYTHON: retico incremental dialogue network ----------
+retico: retico network  (Python) {
+  class: group
+  style.font-size: 20
+
+  mic:    Microphone { class: neutral }
+  cam:    Webcam { class: neutral }
+
+  asr:    Whisper ASR\n(incremental, ADD/REVOKE/COMMIT) { class: primary }
+  vap:    maai · Turn-taking (VAP) { class: primary }
+  bc:     maai · Backchannel { class: primary }
+  nod:    maai · Nod prediction { class: primary }
+  fer:    Vision + FER\n(user emotion) { class: primary }
+  llm:    LLM (dialogue) { class: highlight }
+  tts:    TTS { class: highlight }
+
+  mic -> asr
+  mic -> vap
+  mic -> bc
+  mic -> nod
+  cam -> fer
+  asr -> llm: committed text
+  llm -> tts: reply + affect
+}
+
+# ---------- THE BRIDGE (novel contribution) ----------
+bridge: ★ VizijWebSocketModule  —  FastAPI + websockets\n\nretico AbstractConsumingModule — fan-in of all IU streams into one\nJSON protocol whose envelope preserves ADD / REVOKE / COMMIT over the wire. { class: secondary; style.font-size: 18 }
+
+# ---------- BROWSER: Vizij expressive face ----------
+web: Browser — Vizij face  (React) {
+  class: group
+  style.font-size: 20
+
+  driver: VizijReticoDriver\nregisterInputDriver(factory) + gaze arbiter { class: secondary }
+  runtime: Arora device — shared blackboard store\n(@vizij/runtime-react over @vizij/runtime) { class: primary }
+  viseme: useVisemeMouth\n(client-side visemes) { class: emphasis }
+  audio: AudioManager { class: neutral }
+  face: VizijRuntimeFace\n(pose / gaze / eyelid channels) { class: primary }
+
+  driver -> runtime: "setInput / animateValue\n(store write: {float})"
+  driver -> audio: play(audio)
+  audio -> viseme: features
+  viseme -> runtime: viseme pose weights
+  runtime -> face: "graph reads input paths\neach tick → rig"
+}
+
+# ---------- cross-boundary wiring ----------
+retico.vap  -> bridge: turn.state
+retico.bc   -> bridge: backchannel.cue
+retico.nod  -> bridge: nod.cue
+retico.fer  -> bridge: emotion.fer
+retico.llm  -> bridge: emotion.affect
+retico.tts  -> bridge: speech.audio + text
+bridge -> web.driver: "JSON events  (WebSocket ws://:8765)" { style: { stroke: "#EC4D00"; stroke-width: 3 } }
+
+# ---------- cloud-key callout (legend, unconnected) ----------
+keys: ☁ NEEDS A CLOUD API KEY\n\n• LLM — recommended cloud (OpenAI / Gemini) for demo latency\n   (local HF model is the zero-key fallback)\n• Polly TTS — only on the Polly viseme path (see viseme diagram)\n• Deepgram / Google ASR — optional swap for Whisper (local, no key)\n\nEverything else runs local / CPU / no key. { class: highlight; style.font-size: 15; near: bottom-right }

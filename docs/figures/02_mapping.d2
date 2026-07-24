@@ -1,0 +1,49 @@
+...@_brand.d2
+
+direction: right
+
+# ---- capability sources (retico) ----
+src: retico signal (source) {
+  class: group
+  turn:  Turn-taking · VAP { class: primary }
+  bc:    Backchannel { class: primary }
+  nod:   Nod prediction { class: primary }
+  tts:   TTS audio + text { class: highlight }
+  fer:   FER (user emotion) { class: primary }
+  affect: LLM affect tag { class: highlight }
+  gazei: dialogue state\n(thinking / target) { class: primary }
+}
+
+# ---- ws events ----
+ev: WebSocket event (JSON) {
+  class: group
+  e_turn:   turn.state { class: secondary }
+  e_bc:     backchannel.cue { class: secondary }
+  e_nod:    nod.cue { class: secondary }
+  e_audio:  speech.audio + speech.end { class: secondary }
+  e_fer:    emotion.fer { class: secondary }
+  e_affect: emotion.affect { class: secondary }
+  e_gaze:   gaze.intent { class: secondary }
+}
+
+# ---- vizij channels + verb ----
+ch: Vizij channel  ·  verb / duration {
+  class: group
+  c_gaze:  eyes → camera + micro-saccades\nanimateValue 0.3–0.4s { class: emphasis }
+  c_bc:    head-pitch dip + brow flash\nanimateValue 0.12–0.2s { class: emphasis }
+  c_nod:   head-pitch oscillation ×count\nanimateValue ~0.18s/cycle { class: emphasis }
+  c_vis:   viseme pose weights (a,e,i,o,u,…)\nanimateValue 0.06s/frame { class: emphasis }
+  c_fer:   poses/<emotion>.weight = conf·0.7\nanimateValue 0.5s + hysteresis { class: emphasis }
+  c_aff:   agent expression attack/hold/decay\nanimateValue 0.25s / decay=len { class: emphasis }
+  c_gint:  eyes (+head) to target / aversion\nanimateValue 0.2–0.3s + hold { class: emphasis }
+}
+
+src.turn   -> ev.e_turn   -> ch.c_gaze
+src.bc     -> ev.e_bc     -> ch.c_bc
+src.nod    -> ev.e_nod    -> ch.c_nod
+src.tts    -> ev.e_audio  -> ch.c_vis
+src.fer    -> ev.e_fer    -> ch.c_fer
+src.affect -> ev.e_affect -> ch.c_aff
+src.gazei  -> ev.e_gaze   -> ch.c_gint
+
+note: Envelope on every event — type, ts, seq, iu(id, prev, update), payload.\nupdate = ADD / REVOKE / COMMIT lets the driver retract un-committed impulses (ASR jitter).\nGaze arbiter priority — joint-attention → aversion → turn posture → idle. { class: neutral; near: bottom-center; style.font-size: 15 }
