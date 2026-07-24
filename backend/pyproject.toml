@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.139.2",
+    "gtts>=2.5.4",
     "retico-core>=2.0.0",
     "retico-maai>=0.1.0",
     "uvicorn[standard]>=0.51.0",

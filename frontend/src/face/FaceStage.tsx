@@ -30,6 +30,12 @@ function ReticoBridge() {
   const startedRef = useRef(false);
   const wsRef = useRef<WsClient | null>(null);
   const mic = useMicCapture(() => wsRef.current);
+  const [sayText, setSayText] = useState("Hi there! I can talk now.");
+
+  const say = () => {
+    const text = sayText.trim();
+    if (text) wsRef.current?.sendJSON({ type: "control", action: "say", text });
+  };
 
   // Connect the WebSocket once on mount, independent of the runtime lifecycle
   // (reconnect handles drops). Decoupling from `ready` avoids the socket being torn
@@ -81,6 +87,18 @@ function ReticoBridge() {
         </button>
       </div>
       {mic.error && <div className="mt-1 text-red-300">mic: {mic.error}</div>}
+      <div className="mt-2 flex gap-1">
+        <input
+          className="w-56 rounded bg-neutral-800 px-2 py-1 text-neutral-100 outline-none"
+          value={sayText}
+          onChange={(e) => setSayText(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && say()}
+          placeholder="type something to say…"
+        />
+        <button className="rounded bg-teal-700 px-2 py-1 hover:bg-teal-600" onClick={say}>
+          say
+        </button>
+      </div>
       {last && (
         <div className="mt-1 opacity-80">
           <span className="font-mono">{last.type}</span>{" "}

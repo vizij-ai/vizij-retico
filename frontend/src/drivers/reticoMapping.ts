@@ -39,22 +39,38 @@ export const BACKCHANNEL = { browRaise: 0.8, upMs: 110, downMs: 240 };
 // nod.cue → eye "dip" surrogate (down then back) per cycle, since there's no head.
 export const NOD = { dip: 0.5, perCycleMs: 190 };
 
+// speech.audio → jaw opening driven by audio amplitude (this rig has /mouth/chin,
+// not phoneme viseme poses). gain scales RMS (~0..0.25) to the channel; clamp caps it.
+export const LIPSYNC = { gain: 6.0, max: 0.9, intervalMs: 30 };
+
 export interface FaceChannels {
   gazeX?: string;
   gazeY?: string;
   blink?: string;
   brow: string[];
+  mouthOpen?: string;
 }
 
 /** Resolve semantic channels against the rig's actual input paths. */
 export function resolveChannels(inputPaths: string[]): FaceChannels {
   const set = new Set(inputPaths);
   const has = (k: string) => (set.has(k) ? k : undefined);
+  const first = (...ks: string[]) => ks.find((k) => set.has(k));
   return {
     gazeX: has("/gaze/left_right"),
     gazeY: has("/gaze/up_down"),
     blink: has("/lids/blink"),
     // vertical brow channels (raise/lower)
     brow: inputPaths.filter((k) => /^\/brow\/.*(midud|outud|inud)\/value$/.test(k)),
+    // Jaw-open for amplitude lip-sync. NOTE: on the current face.glb + published
+    // runtime-react@0.1.0, mouth inputs don't visibly deform the mesh (its embedded
+    // mouth animations fail to register — "missing field id"); expected to work on
+    // the newer vizij packages. The rig also exposes viseme poses (/poses/pose_{a,e,
+    // i,o,u,...}) for higher-fidelity lip-sync later.
+    mouthOpen: first(
+      "/standard/vizij/mouth/morph/jaw_open",
+      "/propsrig/mouth/jawud/value",
+      "/mouth/chin",
+    ),
   };
 }

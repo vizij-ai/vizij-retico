@@ -7,10 +7,18 @@ import type { InputDriverFactory } from "@vizij/runtime-react";
 import type { ReticoEvent, WsClient } from "../net/wsClient";
 import {
   BACKCHANNEL,
+  LIPSYNC,
   NOD,
   TURN_POSTURE,
   resolveChannels,
 } from "./reticoMapping";
+
+function base64ToArrayBuffer(b64: string): ArrayBuffer {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
+}
 
 // animateValue lives on the runtime context (not InputDriverContext), so the caller
 // passes it in. Signature matches @vizij/runtime-react's AnimateValueOptions loosely.
@@ -90,6 +98,43 @@ export function createReticoDriver(
       setGaze(baseGaze.x, baseGaze.y, (e.payload.durationSeconds ?? 0.25) * 1000);
     };
 
+    // --- speech: play TTS audio + amplitude-driven jaw lip-sync ---
+    let audioCtx: AudioContext | null = null;
+    let lipTimer: ReturnType<typeof setInterval> | null = null;
+    const stopLip = () => {
+      if (lipTimer) clearInterval(lipTimer);
+      lipTimer = null;
+      if (ch.mouthOpen) ctx.setInput(ch.mouthOpen, { float: 0 });
+    };
+    const onSpeech = async (e: ReticoEvent) => {
+      if (!ch.mouthOpen) return;
+      try {
+        if (!audioCtx) audioCtx = new AudioContext();
+        if (audioCtx.state === "suspended") await audioCtx.resume();
+        const buf = await audioCtx.decodeAudioData(base64ToArrayBuffer(e.payload.data));
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 512;
+        src.connect(analyser);
+        analyser.connect(audioCtx.destination);
+        const data = new Float32Array(analyser.fftSize);
+        stopLip();
+        lipTimer = setInterval(() => {
+          analyser.getFloatTimeDomainData(data);
+          let sum = 0;
+          for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+          const rms = Math.sqrt(sum / data.length);
+          const open = Math.min(LIPSYNC.max, rms * LIPSYNC.gain);
+          ctx.setInput(ch.mouthOpen!, { float: open });
+        }, LIPSYNC.intervalMs);
+        src.onended = stopLip;
+        src.start();
+      } catch {
+        stopLip();
+      }
+    };
+
     const dispatch = (e: ReticoEvent) => {
       switch (e.type) {
         case "turn.state":
@@ -100,6 +145,11 @@ export function createReticoDriver(
           return onNod(e);
         case "gaze.intent":
           return onGaze(e);
+        case "speech.audio":
+          void onSpeech(e);
+          return;
+        case "speech.end":
+          return; // mouth zeroes on audio 'ended'
         default:
           return; // unknown types ignored (forward-compatible)
       }
@@ -117,11 +167,17 @@ export function createReticoDriver(
         started = false;
         unsub?.();
         unsub = null;
+        stopLip();
+        audioCtx?.close().catch(() => {});
+        audioCtx = null;
       },
       dispose() {
         started = false;
         unsub?.();
         unsub = null;
+        stopLip();
+        audioCtx?.close().catch(() => {});
+        audioCtx = null;
       },
     };
   };

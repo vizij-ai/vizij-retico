@@ -19,7 +19,7 @@ import json
 import queue
 import threading
 import time
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -43,6 +43,9 @@ class WebSocketHub:
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
         self._server: Optional[uvicorn.Server] = None
+
+        # Set by the network to handle a "say" control message (text -> speech events).
+        self.say_handler: Optional[Callable[[str], None]] = None
 
     # ---- server plumbing -------------------------------------------------
 
@@ -101,7 +104,12 @@ class WebSocketHub:
             b64 = payload.get("data")
             if b64:
                 self.video_in.put(base64.b64decode(b64))
-        # "control" / "hello" messages are accepted and ignored for now.
+        elif typ == "control" and data.get("action") == "say" and self.say_handler:
+            # Run TTS off the asyncio loop (gTTS makes a blocking network call).
+            threading.Thread(
+                target=self.say_handler, args=(data.get("text", ""),), daemon=True
+            ).start()
+        # other "control" / "hello" messages are accepted and ignored.
 
     # ---- outbound --------------------------------------------------------
 

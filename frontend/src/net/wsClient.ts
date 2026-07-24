@@ -77,6 +77,11 @@ export class WsClient {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(pcm);
   }
 
+  /** Send a JSON control message (e.g. { type:"control", action:"say", text }). */
+  sendJSON(obj: unknown): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(obj));
+  }
+
   close(): void {
     this.closed = true;
     this.ws?.close();

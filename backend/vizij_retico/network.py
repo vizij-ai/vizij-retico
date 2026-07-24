@@ -15,7 +15,9 @@ from typing import Any
 import retico_core
 
 from .config import CONFIG
+from .events import EventFramer
 from .hub import WebSocketHub
+from .speech import make_say_handler
 from .ws_module import VizijWebSocketModule
 
 
@@ -32,16 +34,16 @@ class RunningNetwork:
             self.hub.stop()
 
 
-def _build_fake(hub: WebSocketHub):
+def _build_fake(hub: WebSocketHub, framer: EventFramer):
     from .testing import FakeTurnModule, FAKE_CLASSIFIERS
 
     fake = FakeTurnModule()
-    bridge = VizijWebSocketModule(hub, classifiers=FAKE_CLASSIFIERS)
+    bridge = VizijWebSocketModule(hub, classifiers=FAKE_CLASSIFIERS, framer=framer)
     fake.subscribe(bridge)
     return fake, [fake, bridge]
 
 
-def _build_maai(hub: WebSocketHub):
+def _build_maai(hub: WebSocketHub, framer: EventFramer):
     # Imported lazily so the fake path never needs torch/maai installed.
     from retico_maai import TurnTakingModule, BackchannelModule, NodPredictionModule
 
@@ -52,7 +54,7 @@ def _build_maai(hub: WebSocketHub):
     turn = TurnTakingModule(mode="vap_mc", lang="en", frame_rate=10)
     bc = BackchannelModule(lang="en", frame_rate=10)
     nod = NodPredictionModule(lang="en", frame_rate=10)
-    bridge = VizijWebSocketModule(hub, classifiers=MaaiClassifiers().registry)
+    bridge = VizijWebSocketModule(hub, classifiers=MaaiClassifiers().registry, framer=framer)
 
     for predictor in (turn, bc, nod):
         web_in.subscribe(predictor)
@@ -63,8 +65,10 @@ def _build_maai(hub: WebSocketHub):
 
 def start(mode: str = "fake") -> RunningNetwork:
     hub = WebSocketHub(CONFIG.host, CONFIG.port)
+    framer = EventFramer()  # shared by the bridge and the TTS say-handler
+    hub.say_handler = make_say_handler(hub, framer)
     hub.start()
-    head, modules = _build_fake(hub) if mode == "fake" else _build_maai(hub)
+    head, modules = _build_fake(hub, framer) if mode == "fake" else _build_maai(hub, framer)
     retico_core.network.run(head)
     return RunningNetwork(hub=hub, head=head, modules=modules)
 
