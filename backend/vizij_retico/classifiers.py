@@ -33,6 +33,7 @@ class MaaiClassifiers:
     def __init__(self) -> None:
         self._bc_armed = True
         self._nod_armed = True
+        self._asr_tokens: list[str] = []
 
     @property
     def registry(self) -> dict[str, Any]:
@@ -40,7 +41,35 @@ class MaaiClassifiers:
             "VAPIU": self.turn_state,
             "BackchannelIU": self.backchannel,
             "NodIU": self.nod,
+            "SpeechRecognitionIU": self.asr_text,
         }
+
+    # -- ASR (Whisper) --------------------------------------------------------
+    def asr_text(self, iu, ut, framer: EventFramer) -> Optional[dict[str, Any]]:
+        """Accumulate incremental ASR tokens into a running transcript.
+
+        WhisperASRModule emits one SpeechRecognitionIU token per ADD and COMMITs at
+        end-of-utterance. (Approximate: REVOKEs are ignored for the MVP.)
+        """
+        token = (getattr(iu, "text", "") or "").strip()
+        if ut == retico_core.UpdateType.ADD:
+            if token:
+                self._asr_tokens.append(token)
+            partial = " ".join(self._asr_tokens)
+            if not partial:
+                return None
+            return framer.frame(
+                "asr.text", {"text": partial, "final": False}, iu=iu_provenance(iu, ut)
+            )
+        if ut == retico_core.UpdateType.COMMIT:
+            text = " ".join(self._asr_tokens)
+            self._asr_tokens = []
+            if not text:  # ignore empty commits from trailing silence
+                return None
+            return framer.frame(
+                "asr.text", {"text": text, "final": True}, iu=iu_provenance(iu, ut)
+            )
+        return None
 
     # -- turn-taking (VAP) ----------------------------------------------------
     def turn_state(self, iu, ut, framer: EventFramer) -> Optional[dict[str, Any]]:

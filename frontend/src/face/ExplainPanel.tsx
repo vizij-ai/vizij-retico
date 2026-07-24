@@ -43,6 +43,11 @@ export function describeEvent(e: ReticoEvent): { title: string; detail: string }
       return { title: "emotion.affect", detail: `Express ${p.emotion} (${Number(p.intensity ?? 0).toFixed(2)}).` };
     case "gaze.intent":
       return { title: `gaze.intent · ${p.mode}`, detail: `Look ${p.mode} → (${p.x ?? 0}, ${p.y ?? 0}).` };
+    case "asr.text":
+      return {
+        title: `asr.text ${p.final ? "(final)" : "(partial)"}`,
+        detail: `Heard: “${p.text ?? ""}”`,
+      };
     default:
       return { title: e.type, detail: JSON.stringify(p) };
   }
@@ -50,6 +55,7 @@ export function describeEvent(e: ReticoEvent): { title: string; detail: string }
 
 export function ExplainPanel({ mode, log }: { mode: string | null; log: ReticoEvent[] }) {
   const current = log.find((e) => e.type === "turn.state");
+  const heard = log.find((e) => e.type === "asr.text");
   const modeNote =
     mode === "maai"
       ? "Backend: maai — driven by live mic audio (VAP model). Face should track what you say."
@@ -65,6 +71,12 @@ export function ExplainPanel({ mode, log }: { mode: string | null; log: ReticoEv
       >
         {modeNote}
       </div>
+
+      {heard && (
+        <div className="mb-2 rounded bg-sky-900/50 p-2">
+          🗣 heard: “{heard.payload.text}”{heard.payload.final ? " (final)" : " …"}
+        </div>
+      )}
 
       {current && (
         <div className="mb-2 rounded bg-neutral-800/70 p-2">

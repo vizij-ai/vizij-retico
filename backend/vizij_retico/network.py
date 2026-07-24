@@ -46,6 +46,7 @@ def _build_fake(hub: WebSocketHub, framer: EventFramer):
 def _build_maai(hub: WebSocketHub, framer: EventFramer):
     # Imported lazily so the fake path never needs torch/maai installed.
     from retico_maai import TurnTakingModule, BackchannelModule, NodPredictionModule
+    from retico_whisperasr import WhisperASRModule
 
     from .classifiers import MaaiClassifiers
     from .web_input import WebInputModule
@@ -54,13 +55,14 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
     turn = TurnTakingModule(mode="vap_mc", lang="en", frame_rate=10)
     bc = BackchannelModule(lang="en", frame_rate=10)
     nod = NodPredictionModule(lang="en", frame_rate=10)
+    asr = WhisperASRModule(framerate=16000, language="en", silence_dur=1)
     bridge = VizijWebSocketModule(hub, classifiers=MaaiClassifiers().registry, framer=framer)
 
-    for predictor in (turn, bc, nod):
-        web_in.subscribe(predictor)
-        predictor.subscribe(bridge)
+    for consumer in (turn, bc, nod, asr):
+        web_in.subscribe(consumer)
+        consumer.subscribe(bridge)
 
-    return web_in, [web_in, turn, bc, nod, bridge]
+    return web_in, [web_in, turn, bc, nod, asr, bridge]
 
 
 def start(mode: str = "fake") -> RunningNetwork:
