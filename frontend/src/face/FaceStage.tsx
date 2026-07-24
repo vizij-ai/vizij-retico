@@ -31,30 +31,37 @@ function ReticoBridge() {
   const wsRef = useRef<WsClient | null>(null);
   const mic = useMicCapture(() => wsRef.current);
 
-  // Register the driver + open the socket exactly once, when the runtime becomes
-  // ready. We read the (unstable-identity) runtime methods through a ref so this
-  // effect doesn't re-run — re-registering the driver recomposes the device.
+  // Connect the WebSocket once on mount, independent of the runtime lifecycle
+  // (reconnect handles drops). Decoupling from `ready` avoids the socket being torn
+  // down when the device recomposes during load.
   useEffect(() => {
-    if (!rt.ready || startedRef.current) return;
-    startedRef.current = true;
-    const { registerInputDriver, inputConstraints, animateValue } = rtRef.current;
     const ws = new WsClient(WS_URL);
     wsRef.current = ws;
     const offStatus = ws.onStatus(setStatus);
     const offEvent = ws.addEventListener(setLast);
-    const inputPaths = Object.keys(inputConstraints ?? {});
-    const lifecycle = registerInputDriver(
-      "retico",
-      createReticoDriver(ws, inputPaths, animateValue),
-    );
-    lifecycle.start(); // idempotent
     ws.connect();
     return () => {
       offStatus();
       offEvent();
-      lifecycle.dispose();
       ws.close();
       wsRef.current = null;
+    };
+  }, []);
+
+  // Register the driver once the runtime is ready (reading unstable-identity runtime
+  // methods through a ref so this doesn't re-run and recompose the device).
+  useEffect(() => {
+    if (!rt.ready || !wsRef.current || startedRef.current) return;
+    startedRef.current = true;
+    const { registerInputDriver, inputConstraints, animateValue } = rtRef.current;
+    const inputPaths = Object.keys(inputConstraints ?? {});
+    const lifecycle = registerInputDriver(
+      "retico",
+      createReticoDriver(wsRef.current, inputPaths, animateValue),
+    );
+    lifecycle.start(); // idempotent
+    return () => {
+      lifecycle.dispose();
       startedRef.current = false;
     };
   }, [rt.ready]);
