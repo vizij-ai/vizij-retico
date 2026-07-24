@@ -7,6 +7,7 @@ import {
 } from "@vizij/runtime-react";
 import { WsClient, type ReticoEvent, type WsStatus } from "../net/wsClient";
 import { createReticoDriver } from "../drivers/VizijReticoDriver";
+import { useMicCapture } from "../capture/useMicCapture";
 import { DevControls } from "./devControls";
 
 // Our own GLB, hosted under frontend/public/assets/.
@@ -27,6 +28,8 @@ function ReticoBridge() {
   const rtRef = useRef(rt);
   rtRef.current = rt;
   const startedRef = useRef(false);
+  const wsRef = useRef<WsClient | null>(null);
+  const mic = useMicCapture(() => wsRef.current);
 
   // Register the driver + open the socket exactly once, when the runtime becomes
   // ready. We read the (unstable-identity) runtime methods through a ref so this
@@ -36,6 +39,7 @@ function ReticoBridge() {
     startedRef.current = true;
     const { registerInputDriver, inputConstraints, animateValue } = rtRef.current;
     const ws = new WsClient(WS_URL);
+    wsRef.current = ws;
     const offStatus = ws.onStatus(setStatus);
     const offEvent = ws.addEventListener(setLast);
     const inputPaths = Object.keys(inputConstraints ?? {});
@@ -50,6 +54,7 @@ function ReticoBridge() {
       offEvent();
       lifecycle.dispose();
       ws.close();
+      wsRef.current = null;
       startedRef.current = false;
     };
   }, [rt.ready]);
@@ -61,7 +66,14 @@ function ReticoBridge() {
         <span className={`inline-block h-2 w-2 rounded-full ${dot}`} />
         <span>retico {status}</span>
         <span className="opacity-60">{WS_URL}</span>
+        <button
+          className={`ml-2 rounded px-2 py-0.5 ${mic.active ? "bg-emerald-600" : "bg-neutral-700"} hover:opacity-90`}
+          onClick={() => (mic.active ? mic.stop() : mic.start())}
+        >
+          {mic.active ? "● mic on" : "mic off"}
+        </button>
       </div>
+      {mic.error && <div className="mt-1 text-red-300">mic: {mic.error}</div>}
       {last && (
         <div className="mt-1 opacity-80">
           <span className="font-mono">{last.type}</span>{" "}
