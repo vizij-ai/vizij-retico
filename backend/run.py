@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-import uvicorn
+import sys
 
-from vizij_retico.config import CONFIG
-from vizij_retico.server import app
+from vizij_retico.network import run_forever
 
 
 def main() -> None:
-    uvicorn.run(app, host=CONFIG.host, port=CONFIG.port, log_level="info")
+    # mode: "fake" (default; no torch) or "maai" (real predictors).
+    mode = sys.argv[1] if len(sys.argv) > 1 else "fake"
+    run_forever(mode)
 
 
 if __name__ == "__main__":
