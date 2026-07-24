@@ -39,6 +39,9 @@ export function createReticoDriver(
     let baseGaze = { x: 0, y: 0 };
     let unsub: (() => void) | null = null;
     let started = false;
+    let lastState: string | null = null;
+    let lastBlinkAt = 0;
+    const MIN_BLINK_GAP_MS = 900;
 
     const animScalar = (
       control: ScalarControl,
@@ -65,12 +68,20 @@ export function createReticoDriver(
       animScalar(controls.eyelids.rightUpper, v, ms, true);
     };
     const blinkOnce = () => {
+      const now = performance.now();
+      if (now - lastBlinkAt < MIN_BLINK_GAP_MS) return; // rate-limit blinks
+      lastBlinkAt = now;
       setLids(1, 80);
       window.setTimeout(() => setLids(0, 120), 90);
     };
 
     const onTurn = (e: ReticoEvent) => {
-      const p = TURN_POSTURE[e.payload.state];
+      const state = e.payload.state;
+      // turn.state arrives many times/sec in maai mode — only react to TRANSITIONS,
+      // otherwise the posture (and its blink) re-fire every frame.
+      if (state === lastState) return;
+      lastState = state;
+      const p = TURN_POSTURE[state];
       if (!p) return;
       baseGaze = p.gaze;
       setGaze(baseGaze.x, baseGaze.y, p.durationMs);

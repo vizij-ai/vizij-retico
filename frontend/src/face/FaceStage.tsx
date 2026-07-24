@@ -76,6 +76,15 @@ function ReticoBridge() {
     };
   }, []);
 
+  // Stop the rig's built-in auto-playing idle animation so it doesn't blink/twitch on
+  // its own and fight the driver. Re-runs when controllers register (anims can appear
+  // after `ready`). Toggle back on via the dev panel's "anim" button.
+  useEffect(() => {
+    if (!rt.ready) return;
+    rt.setAnimationActive?.(false);
+    rt.controllers?.anims?.forEach((id) => rt.stopAnimation?.(id));
+  }, [rt.ready, rt.controllers, rt.setAnimationActive, rt.stopAnimation]);
+
   // Register the driver once the runtime is ready (reading unstable-identity runtime
   // methods through a ref so this doesn't re-run and recompose the device).
   useEffect(() => {
@@ -85,9 +94,6 @@ function ReticoBridge() {
       rtRef.current;
     const controls = resolveFaceControls(assetBundle, faceId, inputConstraints);
     console.log("[vizij-retico] resolved face controls", controls);
-    // Stop the rig's built-in auto-playing animation/program so it doesn't fight the
-    // driver (toggle back on via the dev panel).
-    rtRef.current.setAnimationActive?.(false);
     const lifecycle = registerInputDriver(
       "retico",
       createReticoDriver(wsRef.current, controls, animateValue),
