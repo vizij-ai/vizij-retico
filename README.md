@@ -8,7 +8,8 @@ emotion, gaze — over one WebSocket to the browser, where they drive the animat
 The system is the basis for a 4-page IEEE systems/demonstration paper for the
 [IROS 2026 Human–Robot Dialogue workshop](https://human-robot-dialogue.github.io/).
 
-> **Status: planning/design.** No system code yet — this repo currently holds design docs.
+> **Status: step 1 (project setup) in progress.** Frontend + backend scaffolds are in; see the
+> Status section below. Design docs are in [`docs/`](docs/README.md).
 
 ## Read the design
 
@@ -25,7 +26,18 @@ Start at **[`docs/README.md`](docs/README.md)** for the full document map. Highl
 ## Intended layout (not yet created)
 
 ```
-python/   VizijWebSocketModule + retico network wiring
-web/       Vite/React app: VizijRuntimeProvider + VizijReticoDriver + reticoMapping.ts
-docs/      design documentation (this is what exists today)
+backend/    uv-managed retico backend: WebInputModule + VizijWebSocketModule + network wiring
+frontend/   Vite/React app: VizijRuntimeProvider + VizijReticoDriver + reticoMapping.ts + capture
+docs/       design documentation
 ```
+
+## Status (step 1, in progress)
+
+- `frontend/` — Vite + React 19 + TS + Tailwind v4 + `@semio/ui`, consuming `@vizij/runtime-react`
+  from public npm. Face renders via `VizijRuntimeProvider`/`VizijRuntimeFace`; a dev panel drives
+  channels via `setInput`. (Awaiting a rigged GLB at `frontend/public/assets/face.glb` to verify
+  render.)
+- `backend/` — uv + `retico-core` + FastAPI `/ws` echo on port **8770** (8765 is taken locally).
+  Verified: `/health` + `/ws` round-trip.
+
+Run: `cd frontend && npm run dev` · `cd backend && uv run run.py`.

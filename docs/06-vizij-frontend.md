@@ -4,13 +4,22 @@ See [`figures/03_visemes.d2`](figures/03_visemes.d2) for the viseme-path compari
 
 ## 6.1 App shell
 
-- **Stack:** npm + Vite + React + Tailwind + Base UI (Zustand only if local UI state outgrows
-  React state).
-- **Mount:** wrap the app in `VizijRuntimeProvider` with a `VizijAssetBundle` (the rigged `semio`
-  GLB + rig/pose graph metadata) and render `VizijRuntimeFace`. The provider boots the Arora
-  device and runs its tick loop (`autostart` / self-pacing).
-- **State surface:** `useVizijRuntime()` for the control API; `useVizijOutputs(paths)` if the UI
-  needs to display live channel values; `useRigInput(path)` for one-off debugging controls.
+- **Stack:** npm + Vite + React + Tailwind v4 + `@semio/ui` (Zustand only if local UI state
+  outgrows React state).
+- **Mount:** wrap the app in `VizijRuntimeProvider` with a `VizijAssetBundle` (the rigged GLB +
+  rig/pose graph metadata) and render `VizijRuntimeFace`. The provider boots the runtime device
+  and runs its tick loop (`autostart` / self-pacing).
+- **State surface:** `useVizijRuntime()` for the control API (`setInput`/`animateValue`/
+  `registerInputDriver`/`inputConstraints`); `useVizijOutputs(paths)` for live channel values;
+  `useRigInput(path)` for one-off debugging controls.
+- **Capture:** the frontend also owns mic/webcam via `getUserMedia` and streams them to the
+  backend over the same WebSocket (`input.audio`/`input.video`); see §6.8.
+
+> **Published-build note.** The npm `@vizij/runtime-react@0.2.0` we install is **orchestrator-wasm
+> backed** (pre-Arora); the Arora `@vizij/runtime` device is repo `main` (0.3.0, unpublished). The
+> public API (`VizijRuntimeProvider`/`VizijRuntimeFace`/`useVizijRuntime`/`setInput`/`animateValue`/
+> `registerInputDriver`) is identical, so nothing above changes — bump to the Arora build when it
+> publishes.
 
 ## 6.2 `VizijReticoDriver` — a `registerInputDriver` factory
 
@@ -106,17 +115,28 @@ When the gaze arbiter floor (`idle`) is active, run micro-saccades + periodic bl
 `useIdleGazeBehavior`). Idle is suppressed while any higher-priority gaze intent holds and resumes
 automatically. Blink is also triggered on turn hand-off (`agent_should_speak`).
 
-## 6.7 Debug/demo UI (optional, Base UI)
+## 6.7 Debug/demo UI (optional, `@semio/ui`)
 
 A thin side panel (not required for the vignettes) to: show connection status + `seq`/latency;
 toggle capability streams (`control.mute_capability`); pick the active vignette
 (`control.set_vignette`); and display the live value of a few channels via `useVizijOutputs`.
-Kept out of the driver so the driver stays a pure input source.
+Kept out of the driver so the driver stays a pure input source. (Step 1 ships a temporary
+`devControls` panel that auto-generates a slider per `inputConstraints` entry.)
 
-## 6.8 What the frontend does *not* do
+## 6.8 Capture & upstream (browser → backend)
 
-- No dialogue logic (retico owns ASR/LLM/TTS/turn-taking).
-- No networking beyond the one WebSocket.
-- No direct device (`@vizij/runtime`) calls — everything goes through `@vizij/runtime-react`
-  (`setInput`/`animateValue`), so we ride the supported React surface and the Arora device
-  lifecycle the provider manages.
+The frontend captures the user and streams it to the backend over the same WebSocket:
+- **Audio:** `getUserMedia({ audio })` → an **AudioWorklet** downsamples to PCM frames sent as
+  `input.audio` (binary or base64). The backend `WebInputModule` wraps these as retico audio IUs.
+- **Video:** `getUserMedia({ video })` → a low-rate (e.g. 5–10 fps) downscaled frame grab
+  (`<canvas>` → JPEG) sent as `input.video`, wrapped as retico image IUs for FER.
+- Secure context: fine on `http://localhost`; a LAN/remote host needs HTTPS.
+- Kept in `frontend/src/capture/`, separate from the driver (which is output-only).
+
+## 6.9 What the frontend does *not* do
+
+- No dialogue logic (retico owns ASR/LLM/TTS/turn-taking); the browser only captures + streams.
+- No networking beyond the one bidirectional WebSocket.
+- No direct device calls — everything goes through `@vizij/runtime-react`
+  (`setInput`/`animateValue`), so we ride the supported React surface and the device lifecycle the
+  provider manages.

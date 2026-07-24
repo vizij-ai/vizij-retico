@@ -46,7 +46,7 @@ exact tween. Handles are dropped when the tween completes or the utterance commi
 
 Seven types across the four capabilities plus speech. Each shows the payload schema and a concrete
 example. The **target channel + verb/duration** for each lives in the editable mapping
-(`web/src/drivers/reticoMapping.ts`, see [04](04-iu-animation-mapping.md)); it is summarized here
+(`frontend/src/drivers/reticoMapping.ts`, see [04](04-iu-animation-mapping.md)); it is summarized here
 for readability but is *not* duplicated logic — the driver reads it from the config.
 
 ### 3.3.1 `turn.state` — turn-taking (retico-maai VAP)
@@ -187,10 +187,26 @@ Subject to the driver's gaze arbiter (§2.8).
 - **Turn states** — see §3.3.1.
 - **Backchannel kinds / gaze modes** — see the respective sections.
 
-## 3.5 Client → server messages (control channel, optional)
+## 3.5 Client → server messages (capture upstream + control)
 
-The MVP is broadcast-only (server → clients). A minimal reverse channel is reserved for the demo
-UI (not required for the vignettes):
+The WebSocket is **bidirectional**. Beyond the server→client events above, the browser sends its
+captured media upstream to the backend `WebInputModule` (see [06 §6.8](06-vizij-frontend.md)):
+
+```jsonc
+// audio: PCM frames from an AudioWorklet (base64 here; may also be sent as binary frames)
+{ "type":"input.audio", "ts":..., "seq":..,
+  "payload": { "format":"pcm_s16le", "sampleRate":16000, "channels":1, "data":"<base64>" } }
+
+// video: periodic downscaled webcam frames (low fps) for FER
+{ "type":"input.video", "ts":..., "seq":..,
+  "payload": { "format":"image/jpeg;base64", "width":320, "height":240, "data":"<base64>" } }
+```
+Binary audio frames (an `ArrayBuffer` of little-endian PCM) are preferred in practice to avoid
+base64 overhead; the JSON form above is the fallback/spec form. `WebInputModule` wraps
+`input.audio` as retico audio IUs (feeding ASR + MaAI) and `input.video` as image IUs (feeding
+FER).
+
+A minimal control channel is also reserved for the demo UI (not required for the vignettes):
 
 ```jsonc
 { "type":"control", "action":"set_vignette", "value":"listener" }   // scripting aid

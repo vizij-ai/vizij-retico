@@ -10,7 +10,7 @@ than driver logic.
 
 ## 4.1 Where it lives
 
-`web/src/drivers/reticoMapping.ts` — a plain exported table keyed by protocol event `type`.
+`frontend/src/drivers/reticoMapping.ts` — a plain exported table keyed by protocol event `type`.
 `VizijReticoDriver` ([06](06-vizij-frontend.md)) imports it and is otherwise generic: it receives
 an event, looks up its entry, resolves channels, and applies the specified verb with the specified
 timing, subject to the arbiter.
@@ -31,7 +31,7 @@ timing, subject to the arbiter.
 ## 4.3 The config shape (proposed TypeScript)
 
 ```ts
-// web/src/drivers/reticoMapping.ts
+// frontend/src/drivers/reticoMapping.ts
 export type Verb = "animateValue" | "setInput" | "sequence";
 
 export type ChannelKey =

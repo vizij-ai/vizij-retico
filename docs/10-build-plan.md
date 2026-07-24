@@ -22,7 +22,7 @@ swappable and this is not.
    `retico-core`. **Gate:** manual `setInput` on a pose weight visibly moves the face.
 2. **Bridge skeleton (riskiest, first).** `VizijWebSocketModule` (FastAPI + `websockets`) +
    `VizijReticoDriver` (`registerInputDriver` factory reading `reticoMapping.ts`). Wire only
-   `Microphone → maai.TurnTaking → bridge → gaze`. Implement the envelope, `seq`/`ts`, REVOKE
+   `WebInputModule → maai.TurnTaking → bridge → gaze`. Implement the envelope, `seq`/`ts`, REVOKE
    handling, and the gaze arbiter's `turn` slot. **Gate:** listening gaze tracks real speech,
    smoothly, median RTT < ~150 ms.
 3. **Backchannel + nod.** Add `BackchannelModule` + `NodPredictionModule` → `backchannel.cue` /

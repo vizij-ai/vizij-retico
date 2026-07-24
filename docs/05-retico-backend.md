@@ -15,41 +15,46 @@
 
 ## 5.2 The network
 
+**Capture is browser-side.** Instead of a server microphone/webcam, a **`WebInputModule`**
+(a producing module that also receives the browser's streamed audio/video over the shared
+WebSocket) emits retico **audio IUs** and **image IUs**. Everything downstream is unchanged.
+
 ```
-Microphone ─┬─▶ WhisperASR ──(committed text)──▶ LLM ──(reply+affect)──▶ TTS ─┐
-            ├─▶ maai.TurnTaking (VAP) ───────────────────────────────────────┤
-            ├─▶ maai.Backchannel ───────────────────────────────────────────┤
-            └─▶ maai.NodPrediction ─────────────────────────────────────────┤
-Webcam ─────▶ Vision ─▶ FER ────────────────────────────────────────────────┤
-                                                                             ▼
-                                                          VizijWebSocketModule (bridge)
+browser getUserMedia ──WS(input.audio/video)──▶ WebInputModule ─┬─▶ audio IU ─▶ WhisperASR ─(text)─▶ LLM ─(reply+affect)─▶ TTS ─┐
+                                                                ├─▶ audio IU ─▶ maai.TurnTaking (VAP) ──────────────────────────┤
+                                                                ├─▶ audio IU ─▶ maai.Backchannel ───────────────────────────────┤
+                                                                ├─▶ audio IU ─▶ maai.NodPrediction ─────────────────────────────┤
+                                                                └─▶ image IU ─▶ FER ────────────────────────────────────────────┤
+                                                                                                                                ▼
+                                                                                             VizijWebSocketModule (outbound events)
 ```
 
-Wiring sketch (`python/network.py`):
+Wiring sketch (`backend/vizij_retico/network.py`):
 
 ```python
-mic   = MicrophoneModule()
-asr   = WhisperASRModule()                 # incremental
-vap   = TurnTakingModule(mode="vap_mc")    # retico-maai
-bc    = BackchannelModule()                # retico-maai
-nod   = NodPredictionModule()              # retico-maai
-cam   = WebcamModule(); fer = FERModule()  # retico-vision (+ FER)
-llm   = HFLMModule(...) # or an OpenAI/Gemini module
-tts   = TTSModule(...)  # gTTS default / speechbrain offline
+web_in = WebInputModule()                  # browser audio/video (over WS) -> audio + image IUs
+asr    = WhisperASRModule()                # incremental
+vap    = TurnTakingModule(mode="vap_mc")   # retico-maai
+bc     = BackchannelModule()               # retico-maai
+nod    = NodPredictionModule()             # retico-maai
+fer    = FERModule()                       # retico-vision (+ FER)
+llm    = HFLMModule(...) # or an OpenAI/Gemini module
+tts    = TTSModule(...)  # gTTS default / speechbrain offline
 bridge = VizijWebSocketModule(host="127.0.0.1", port=8770)
 
-mic.subscribe(asr); mic.subscribe(vap); mic.subscribe(bc); mic.subscribe(nod)
-cam.subscribe(fer)
+# WebInputModule + VizijWebSocketModule share one FastAPI/websockets server.
+web_in.subscribe(asr); web_in.subscribe(vap); web_in.subscribe(bc); web_in.subscribe(nod)
+web_in.subscribe(fer)                      # image IUs (WebInputModule tags audio vs image)
 asr.subscribe(llm); llm.subscribe(tts)
 
 for m in (vap, bc, nod, fer, llm, tts, asr):   # everything the bridge should forward
     m.subscribe(bridge)
 
-retico.network.run(mic)      # also starts cam via reachability if wired to a head
+retico.network.run(web_in)
 ```
 
-The MaAI predictors subscribe to `mic` **in parallel** with `asr` — social signals must not wait
-on transcription (see [02](02-architecture.md#22-the-retico-side)).
+The MaAI predictors subscribe to the audio IUs **in parallel** with `asr` — social signals must
+not wait on transcription (see [02](02-architecture.md)).
 
 ## 5.3 Module choices (default local/CPU, cloud swaps noted)
 

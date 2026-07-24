@@ -14,34 +14,38 @@ Human ──speaks/appears──▶ [ retico network (Python) ] ──IU streams
 
 Three tiers:
 
-1. **retico network (Python).** Captures microphone + webcam, runs incremental ASR, the MaAI
-   social predictors (turn-taking / backchannel / nod), FER, an LLM, and TTS. Everything is a
-   module emitting IUs.
-2. **The bridge (`VizijWebSocketModule`).** A single retico consuming module that also hosts a
-   WebSocket server. It subscribes to every producing module, normalizes their IUs into one
-   JSON protocol, and broadcasts to connected browsers. This is the only new server process.
-3. **The browser face (React + Vizij).** A `registerInputDriver` factory (`VizijReticoDriver`)
-   opens the WebSocket, interprets each event through the editable mapping, and writes values
-   into the Arora device store; the behavior graph renders them on the face each tick.
+1. **retico network (Python).** A `WebInputModule` receives the browser's streamed mic + webcam
+   (capture is browser-side, not a server device) and emits audio/image IUs; the network runs
+   incremental ASR, the MaAI social predictors (turn-taking / backchannel / nod), FER, an LLM, and
+   TTS. Everything is a module emitting IUs.
+2. **The bridge (`VizijWebSocketModule`).** A single retico consuming module that shares a
+   WebSocket server with `WebInputModule`. It subscribes to every producing module, normalizes
+   their IUs into one JSON protocol, and broadcasts events to connected browsers. The WS is
+   **bidirectional**: browser→backend `input.audio`/`input.video`, backend→browser events.
+3. **The browser face (React + Vizij).** Captures mic/webcam via `getUserMedia` and streams them
+   up; a `registerInputDriver` factory (`VizijReticoDriver`) opens the same WebSocket, interprets
+   each inbound event through the editable mapping, and writes values into the Arora device store;
+   the behavior graph renders them on the face each tick.
 
 ## 2.2 The retico side
 
 retico modules are wired with `m1.subscribe(m2)` (m1's right buffer → m2's left buffer) and run
-with `retico.network.run(head)`. Two independent sensory chains feed the bridge:
+with `retico.network.run(head)`. A `WebInputModule` turns the browser-streamed media into two
+independent sensory chains that feed the bridge:
 
-**Audio chain** (from the microphone):
-- `Microphone → WhisperASR` produces incremental word IUs (ADD/REVOKE as hypotheses firm up,
+**Audio chain** (audio IUs from `WebInputModule`):
+- `WebInputModule → WhisperASR` produces incremental word IUs (ADD/REVOKE as hypotheses firm up,
   COMMIT at stability). Committed text feeds the LLM.
-- `Microphone → maai.TurnTaking` (VAP) produces turn-state IUs (probability of upcoming shift).
-- `Microphone → maai.Backchannel` produces backchannel-cue IUs.
-- `Microphone → maai.NodPrediction` produces nod-cue IUs.
+- `WebInputModule → maai.TurnTaking` (VAP) produces turn-state IUs (probability of upcoming shift).
+- `WebInputModule → maai.Backchannel` produces backchannel-cue IUs.
+- `WebInputModule → maai.NodPrediction` produces nod-cue IUs.
 
   The MaAI predictors subscribe to **audio directly**, in parallel with ASR. This is deliberate:
   social signals must not wait on transcription — a nod or backchannel that arrives after the
   words is useless. This parallelism is the architectural reason the demo can feel responsive.
 
-**Vision chain** (from the webcam):
-- `Webcam → Vision → FER` produces user-emotion IUs, fully independent of the audio path.
+**Vision chain** (image IUs from `WebInputModule`):
+- `WebInputModule → FER` produces user-emotion IUs, fully independent of the audio path.
 
 **Generation chain** (agent output):
 - Committed ASR text → `LLM` → reply text (+ an affect tag) → `TTS` → audio IU (+ the text).
