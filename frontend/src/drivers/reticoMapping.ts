@@ -22,15 +22,19 @@ export interface TurnPosture {
   browRaise: number; // 0..1 fraction applied to vertical brow channels
   blink?: boolean;
   durationMs: number;
+  // transient: glance to `gaze` briefly, then ease back to the resting (camera) gaze,
+  // instead of holding the posture. Prevents getting "stuck" looking away.
+  transient?: boolean;
 }
 
-// turn.state → attentive posture. Editable.
+// turn.state → attentive posture. Editable. The resting gaze is the camera (engaged);
+// only agent_should_speak looks away, and only as a brief "thinking" glance.
 export const TURN_POSTURE: Record<string, TurnPosture> = {
   user_speaking: { gaze: GAZE.camera, browRaise: 0.15, durationMs: 350 }, // lean in, attentive
   user_yielding: { gaze: GAZE.camera, browRaise: 0.6, durationMs: 250 }, // anticipatory brow raise
-  agent_should_speak: { gaze: GAZE.aversion, browRaise: 0.3, blink: true, durationMs: 250 }, // glance away to "think"
+  agent_should_speak: { gaze: GAZE.aversion, browRaise: 0.3, blink: true, durationMs: 250, transient: true }, // brief glance away to "think", then back
   agent_speaking: { gaze: GAZE.camera, browRaise: 0.1, durationMs: 300 },
-  mutual_silence: { gaze: GAZE.idle, browRaise: 0.0, durationMs: 600 }, // disengage
+  mutual_silence: { gaze: GAZE.camera, browRaise: 0.0, durationMs: 700 }, // idle: keep looking at the user
 };
 
 // backchannel.cue → quick brow flash (no head channel on this rig).

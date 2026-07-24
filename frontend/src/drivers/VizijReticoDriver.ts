@@ -16,6 +16,7 @@ import {
   EMOTION_ALIASES,
   EMOTION_BLEND,
   EMOTION_POSE,
+  GAZE,
   LIPSYNC,
   NOD,
   TURN_POSTURE,
@@ -59,7 +60,10 @@ export function createReticoDriver(
     let started = false;
     let lastState: string | null = null;
     let lastBlinkAt = 0;
+    let lastTurnAt = 0;
+    let idleWatch: number | null = null;
     const MIN_BLINK_GAP_MS = 900;
+    const IDLE_RETURN_MS = 3500; // ease back to camera if no turn events arrive for this long
 
     // Absolute rig path for a raw input channel (poses, jaw, …).
     const rigPath = (p: string) => buildRigInputPath(rig.faceId, p);
@@ -100,15 +104,23 @@ export function createReticoDriver(
 
     const onTurn = (e: ReticoEvent) => {
       const state = e.payload.state;
+      lastTurnAt = performance.now();
       // turn.state arrives many times/sec in maai mode — only react to TRANSITIONS,
       // otherwise the posture (and its blink) re-fire every frame.
       if (state === lastState) return;
       lastState = state;
       const p = TURN_POSTURE[state];
       if (!p) return;
-      baseGaze = p.gaze;
-      setGaze(baseGaze.x, baseGaze.y, p.durationMs);
       if (p.blink) blinkOnce();
+      if (p.transient) {
+        // Brief glance to the posture gaze, then ease back to the resting (camera) gaze
+        // so we never get stuck looking away.
+        setGaze(p.gaze.x, p.gaze.y, p.durationMs);
+        window.setTimeout(() => setGaze(baseGaze.x, baseGaze.y, 450), p.durationMs + 300);
+      } else {
+        baseGaze = p.gaze;
+        setGaze(baseGaze.x, baseGaze.y, p.durationMs);
+      }
     };
     const onBackchannel = () => blinkOnce(); // no brow/head on this rig → blink acknowledges
     const onNod = (e: ReticoEvent) => {
@@ -232,13 +244,28 @@ export function createReticoDriver(
       start() {
         if (started) return;
         started = true;
-        setGaze(0, 0, 300); // camera-facing baseline
+        baseGaze = { ...GAZE.camera };
+        setGaze(baseGaze.x, baseGaze.y, 300); // camera-facing baseline
+        lastTurnAt = performance.now();
         unsub = ws.addEventListener(dispatch);
+        // Idle watchdog: if turn events stop (e.g. mic off), ease back to the camera
+        // once instead of freezing at the last posture.
+        idleWatch = window.setInterval(() => {
+          if (lastState !== null && performance.now() - lastTurnAt > IDLE_RETURN_MS) {
+            baseGaze = { ...GAZE.camera };
+            setGaze(baseGaze.x, baseGaze.y, 600);
+            lastState = null;
+          }
+        }, 1000);
       },
       stop() {
         started = false;
         unsub?.();
         unsub = null;
+        if (idleWatch !== null) {
+          window.clearInterval(idleWatch);
+          idleWatch = null;
+        }
         if (fadeTimer !== null) {
           window.clearTimeout(fadeTimer);
           fadeTimer = null;

@@ -14,6 +14,7 @@ are the *source-side* derivations).
 
 from __future__ import annotations
 
+import time
 from typing import Any, Callable, Optional
 
 import retico_core
@@ -23,6 +24,7 @@ from .events import EventFramer, iu_provenance
 # --- tunable thresholds -------------------------------------------------------
 VAD_ACTIVE = 0.5          # channel-1 vad above this => user is speaking
 SHIFT_HI = 0.5            # p_shift above this => a turn shift is likely
+YIELD_WINDOW = 2.0        # s after the user last spoke to still call it the agent's turn
 BC_THRESHOLD = 0.6        # p_bc rising edge above this => backchannel cue
 NOD_THRESHOLD = 0.6       # p_nod_* rising edge above this => nod cue
 
@@ -34,6 +36,7 @@ class MaaiClassifiers:
         self._bc_armed = True
         self._nod_armed = True
         self._asr_tokens: list[str] = []
+        self._last_user_active = 0.0  # monotonic time the user was last speaking
         # Optional sink for the derived turn state (e.g. the LLM's floor gate).
         self._on_turn_state = on_turn_state
 
@@ -90,9 +93,15 @@ class MaaiClassifiers:
         user_future = float(ch1.get("p_future", 0.0))
         p_shift = round(1.0 - user_future, 4)  # likelihood the user yields soon
 
+        # NOTE: p_shift is high during *any* silence (the user isn't about to speak), so
+        # it alone can't mean "the agent's turn" — otherwise the agent would think it
+        # owns the floor through all idle silence. Only call it the agent's turn shortly
+        # after the user actually spoke (a real yield); sustained silence => idle.
+        now = time.monotonic()
         if user_vad > VAD_ACTIVE:
+            self._last_user_active = now
             state = "user_yielding" if p_shift > SHIFT_HI else "user_speaking"
-        elif p_shift > SHIFT_HI:
+        elif p_shift > SHIFT_HI and (now - self._last_user_active) < YIELD_WINDOW:
             state = "agent_should_speak"
         else:
             state = "mutual_silence"
