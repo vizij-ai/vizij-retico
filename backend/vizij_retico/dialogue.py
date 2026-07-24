@@ -18,8 +18,14 @@ import retico_core
 from retico_core.text import SpeechRecognitionIU
 
 # Strip reasoning blocks that "thinking" models (e.g. Qwen3) may emit, so they never
-# reach TTS.
+# reach TTS. The second pattern catches a block that was cut off before its closing tag
+# (the token budget ran out mid-thought) — everything from <think> on is reasoning.
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+_OPEN_THINK_RE = re.compile(r"<think>.*\Z", re.DOTALL | re.IGNORECASE)
+
+
+def clean_reply(content: str) -> str:
+    return _OPEN_THINK_RE.sub("", _THINK_RE.sub("", content or "")).strip()
 
 
 def resolve_model(base_url: str, configured: str) -> Optional[str]:
@@ -34,15 +40,32 @@ def resolve_model(base_url: str, configured: str) -> Optional[str]:
         return None
 
 
-def chat(base_url: str, model: str, messages: list[dict], timeout: float = 60.0) -> str:
+def chat(
+    base_url: str,
+    model: str,
+    messages: list[dict],
+    timeout: float = 60.0,
+    max_tokens: int = 300,
+) -> str:
     r = requests.post(
         f"{base_url}/chat/completions",
-        json={"model": model, "messages": messages, "temperature": 0.7, "max_tokens": 120},
+        json={
+            "model": model,
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": max_tokens,
+        },
         timeout=timeout,
     )
     r.raise_for_status()
-    content = r.json()["choices"][0]["message"]["content"]
-    return _THINK_RE.sub("", content).strip()
+    message = r.json()["choices"][0]["message"]
+    reply = clean_reply(message.get("content"))
+    if not reply:
+        # LM Studio routes a reasoning model's output into `reasoning_content`. With
+        # Qwen3 + /no_think the model often answers entirely inside that channel, leaving
+        # `content` empty — the reply is there, so use it rather than dropping the turn.
+        reply = clean_reply(message.get("reasoning_content") or message.get("reasoning"))
+    return reply
 
 
 class LLMModule(retico_core.AbstractConsumingModule):
@@ -92,7 +115,7 @@ class LLMModule(retico_core.AbstractConsumingModule):
         # comes even if the model never emits a clean shift.
         self.gate_on_turn = gate_on_turn
         self.max_wait = max_wait
-        self._tokens: list[str] = []
+        self._ius: list = []  # IUs of the in-progress utterance (REVOKE-aware)
         self._history: list[dict] = []
         self._model: Optional[str] = None
         self._busy = False
@@ -107,13 +130,19 @@ class LLMModule(retico_core.AbstractConsumingModule):
 
     def process_update(self, update_message):
         for iu, ut in update_message:
-            token = (getattr(iu, "text", "") or "").strip()
             if ut == retico_core.UpdateType.ADD:
-                if token:
-                    self._tokens.append(token)
+                self._ius.append(iu)
+            elif ut == retico_core.UpdateType.REVOKE:
+                # Whisper revises hypotheses by REVOKEing superseded token IUs; keeping
+                # them would feed the LLM a duplicated, garbled transcript.
+                self._ius = [held for held in self._ius if held is not iu]
             elif ut == retico_core.UpdateType.COMMIT:
-                text = " ".join(self._tokens).strip()
-                self._tokens = []
+                text = " ".join(
+                    t
+                    for t in ((getattr(i, "text", "") or "").strip() for i in self._ius)
+                    if t
+                )
+                self._ius = []
                 if text:
                     self._enqueue(text)
         return None
@@ -187,11 +216,16 @@ class LLMModule(retico_core.AbstractConsumingModule):
             messages = ([{"role": "system", "content": self.system}] if self.system else [])
             messages += self._history[-8:]
             reply = chat(self.base_url, self._model, messages)
+            if not reply:
+                # Small "thinking" models occasionally return nothing usable. Retry once
+                # with a larger budget before giving up on the turn.
+                reply = chat(self.base_url, self._model, messages, max_tokens=512)
             print(f"[llm] user={text!r} -> {reply!r}")
             if not reply:
-                # Empty after stripping (e.g. a thinking model that only reasoned) —
-                # don't feed "" to TTS; leave history untouched so the next turn retries.
-                print("[llm] empty reply — skipping speak (is the model in thinking mode?)")
+                # Never feed "" to TTS — and drop the dangling user message, otherwise
+                # the next turn sees two user messages in a row and answers both at once.
+                self._history.pop()
+                print("[llm] empty reply after retry — turn dropped")
                 return
             self._history.append({"role": "assistant", "content": reply})
             # Express affect just before speaking so the face is set as the audio starts.

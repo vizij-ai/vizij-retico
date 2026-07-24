@@ -35,7 +35,7 @@ class MaaiClassifiers:
     def __init__(self, on_turn_state: Optional[Callable[[str], None]] = None) -> None:
         self._bc_armed = True
         self._nod_armed = True
-        self._asr_tokens: list[str] = []
+        self._asr_ius: list[Any] = []  # IUs of the in-progress utterance (REVOKE-aware)
         self._last_user_active = 0.0  # monotonic time the user was last speaking
         # Optional sink for the derived turn state (e.g. the LLM's floor gate).
         self._on_turn_state = on_turn_state
@@ -49,32 +49,44 @@ class MaaiClassifiers:
             "SpeechRecognitionIU": self.asr_text,
         }
 
-    # -- ASR (Whisper) --------------------------------------------------------
+    # -- ASR ------------------------------------------------------------------
     def asr_text(self, iu, ut, framer: EventFramer) -> Optional[dict[str, Any]]:
         """Accumulate incremental ASR tokens into a running transcript.
 
-        WhisperASRModule emits one SpeechRecognitionIU token per ADD and COMMITs at
-        end-of-utterance. (Approximate: REVOKEs are ignored for the MVP.)
+        Both ASR sources emit one SpeechRecognitionIU per token (ADD) and COMMIT at
+        end-of-utterance. Whisper also REVOKEs tokens when it revises a hypothesis, so
+        revoked IUs must be dropped — ignoring them duplicates and garbles the
+        transcript ("Nice. nice they have my Middle Eastern middle eastern ...").
         """
-        token = (getattr(iu, "text", "") or "").strip()
         if ut == retico_core.UpdateType.ADD:
-            if token:
-                self._asr_tokens.append(token)
-            partial = " ".join(self._asr_tokens)
-            if not partial:
-                return None
-            return framer.frame(
-                "asr.text", {"text": partial, "final": False}, iu=iu_provenance(iu, ut)
-            )
-        if ut == retico_core.UpdateType.COMMIT:
-            text = " ".join(self._asr_tokens)
-            self._asr_tokens = []
-            if not text:  # ignore empty commits from trailing silence
+            self._asr_ius.append(iu)
+        elif ut == retico_core.UpdateType.REVOKE:
+            # Identity-based: the gate forwards the very same IU objects.
+            self._asr_ius = [held for held in self._asr_ius if held is not iu]
+        elif ut == retico_core.UpdateType.COMMIT:
+            text = self._joined()
+            # Whisper COMMITs every token IU of the utterance, so only the first commit
+            # carries text; the rest find an empty buffer and are ignored.
+            self._asr_ius = []
+            if not text:
                 return None
             return framer.frame(
                 "asr.text", {"text": text, "final": True}, iu=iu_provenance(iu, ut)
             )
-        return None
+        else:
+            return None
+
+        partial = self._joined()
+        if not partial:
+            return None
+        return framer.frame(
+            "asr.text", {"text": partial, "final": False}, iu=iu_provenance(iu, ut)
+        )
+
+    def _joined(self) -> str:
+        return " ".join(
+            t for t in ((getattr(i, "text", "") or "").strip() for i in self._asr_ius) if t
+        )
 
     # -- turn-taking (VAP) ----------------------------------------------------
     def turn_state(self, iu, ut, framer: EventFramer) -> Optional[dict[str, Any]]:

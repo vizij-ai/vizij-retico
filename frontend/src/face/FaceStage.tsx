@@ -58,13 +58,14 @@ function ReticoBridge() {
   // when the backend is in browser-ASR mode.
   const useBrowserAsr = asrSource !== "whisper";
   const listening = mic.active;
+  // Only toggles the audio stream; the effect below owns starting/stopping the browser
+  // recognizer (starting it here too would create a second one and duplicate results).
   const toggleListen = () => {
     if (listening) {
       mic.stop();
       speech.stop();
     } else {
       mic.start();
-      if (useBrowserAsr && speech.supported) speech.start();
     }
   };
 
