@@ -3,6 +3,7 @@ import {
   VizijRuntimeProvider,
   VizijRuntimeFace,
   useVizijRuntime,
+  resolveFaceControls,
   type VizijAssetBundle,
 } from "@vizij/runtime-react";
 import { WsClient, type ReticoEvent, type WsStatus } from "../net/wsClient";
@@ -59,11 +60,13 @@ function ReticoBridge() {
   useEffect(() => {
     if (!rt.ready || !wsRef.current || startedRef.current) return;
     startedRef.current = true;
-    const { registerInputDriver, inputConstraints, animateValue } = rtRef.current;
-    const inputPaths = Object.keys(inputConstraints ?? {});
+    const { registerInputDriver, animateValue, assetBundle, faceId, inputConstraints } =
+      rtRef.current;
+    const controls = resolveFaceControls(assetBundle, faceId, inputConstraints);
+    console.log("[vizij-retico] resolved face controls", controls);
     const lifecycle = registerInputDriver(
       "retico",
-      createReticoDriver(wsRef.current, inputPaths, animateValue),
+      createReticoDriver(wsRef.current, controls, animateValue),
     );
     lifecycle.start(); // idempotent
     return () => {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useVizijRuntime } from "@vizij/runtime-react";
+import { useVizijRuntime, buildRigInputPath } from "@vizij/runtime-react";
 
 /**
  * Step-1 developer panel. Two jobs:
@@ -14,7 +14,7 @@ import { useVizijRuntime } from "@vizij/runtime-react";
  */
 export function DevControls() {
   const rt = useVizijRuntime();
-  const { ready, setInput, stagePoseNeutral, inputConstraints, outputPaths } = rt;
+  const { ready, setInput, stagePoseNeutral, inputConstraints, outputPaths, faceId } = rt;
 
   const paths = useMemo(
     () => Object.keys(inputConstraints ?? {}).sort(),
@@ -41,7 +41,10 @@ export function DevControls() {
 
   const onChange = (path: string, v: number) => {
     setValues((s) => ({ ...s, [path]: v }));
-    setInput(path, { float: v });
+    // inputConstraints keys are RELATIVE; the graph reads the absolute rig path.
+    // (Note: many channels only actuate via resolveFaceControls — this raw panel is
+    // approximate; the driver uses resolved controls.)
+    setInput(buildRigInputPath(faceId ?? "face", path), { float: v });
   };
 
   return (

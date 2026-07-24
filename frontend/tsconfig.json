@@ -17,7 +17,12 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@vizij/runtime-react": ["../../vizij-web-main/packages/@vizij/runtime-react/dist/index.d.ts"],
+      "@vizij/render": ["../../vizij-web-main/packages/@vizij/render/dist/index.d.ts"]
+    }
   },
   "include": ["src"]
 }
