@@ -10,6 +10,7 @@ import { WsClient, type ReticoEvent, type WsStatus } from "../net/wsClient";
 import { createReticoDriver } from "../drivers/VizijReticoDriver";
 import { useMicCapture } from "../capture/useMicCapture";
 import { DevControls } from "./devControls";
+import { ExplainPanel } from "./ExplainPanel";
 
 // Our own GLB, hosted under frontend/public/assets/.
 const GLB_URL = `${import.meta.env.BASE_URL}assets/face.glb`;
@@ -26,6 +27,8 @@ function ReticoBridge() {
   const rt = useVizijRuntime();
   const [status, setStatus] = useState<WsStatus>("connecting");
   const [last, setLast] = useState<ReticoEvent | null>(null);
+  const [log, setLog] = useState<ReticoEvent[]>([]);
+  const [mode, setMode] = useState<string | null>(null);
   const rtRef = useRef(rt);
   rtRef.current = rt;
   const startedRef = useRef(false);
@@ -45,7 +48,25 @@ function ReticoBridge() {
     const ws = new WsClient(WS_URL);
     wsRef.current = ws;
     const offStatus = ws.onStatus(setStatus);
-    const offEvent = ws.addEventListener(setLast);
+    const offEvent = ws.addEventListener((e) => {
+      if ((e as { type?: string }).type === "hello") {
+        setMode((e as { mode?: string }).mode ?? null);
+        return;
+      }
+      setLast(e);
+      setLog((prev) => {
+        const head = prev[0];
+        // collapse consecutive identical turn states to reduce noise
+        if (
+          e.type === "turn.state" &&
+          head?.type === "turn.state" &&
+          head.payload.state === e.payload.state
+        ) {
+          return prev;
+        }
+        return [e, ...prev].slice(0, 14);
+      });
+    });
     ws.connect();
     return () => {
       offStatus();
@@ -64,6 +85,9 @@ function ReticoBridge() {
       rtRef.current;
     const controls = resolveFaceControls(assetBundle, faceId, inputConstraints);
     console.log("[vizij-retico] resolved face controls", controls);
+    // Stop the rig's built-in auto-playing animation/program so it doesn't fight the
+    // driver (toggle back on via the dev panel).
+    rtRef.current.setAnimationActive?.(false);
     const lifecycle = registerInputDriver(
       "retico",
       createReticoDriver(wsRef.current, controls, animateValue),
@@ -77,6 +101,8 @@ function ReticoBridge() {
 
   const dot = status === "open" ? "bg-emerald-400" : status === "connecting" ? "bg-amber-400" : "bg-red-400";
   return (
+    <>
+      <ExplainPanel mode={mode} log={log} />
     <div className="absolute left-3 top-3 rounded bg-neutral-950/70 px-3 py-2 text-xs text-neutral-100 backdrop-blur">
       <div className="flex items-center gap-2">
         <span className={`inline-block h-2 w-2 rounded-full ${dot}`} />
@@ -114,6 +140,7 @@ function ReticoBridge() {
         </div>
       )}
     </div>
+    </>
   );
 }
 

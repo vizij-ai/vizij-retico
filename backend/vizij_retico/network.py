@@ -65,6 +65,7 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
 
 def start(mode: str = "fake") -> RunningNetwork:
     hub = WebSocketHub(CONFIG.host, CONFIG.port)
+    hub.mode = mode
     framer = EventFramer()  # shared by the bridge and the TTS say-handler
     hub.say_handler = make_say_handler(hub, framer)
     hub.start()

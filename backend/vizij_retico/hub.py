@@ -46,6 +46,8 @@ class WebSocketHub:
 
         # Set by the network to handle a "say" control message (text -> speech events).
         self.say_handler: Optional[Callable[[str], None]] = None
+        # Advertised to clients in the hello message (e.g. "fake" | "maai").
+        self.mode: str = "fake"
 
     # ---- server plumbing -------------------------------------------------
 
@@ -66,7 +68,9 @@ class WebSocketHub:
             await sock.accept()
             self._clients.add(sock)
             await sock.send_text(
-                json.dumps({"type": "hello", "service": "vizij-retico", "protocol": 1})
+                json.dumps(
+                    {"type": "hello", "service": "vizij-retico", "protocol": 1, "mode": self.mode}
+                )
             )
             try:
                 while True:
