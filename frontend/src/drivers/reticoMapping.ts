@@ -9,11 +9,12 @@
 
 export type Vec2 = { x: number; y: number };
 
-// Normalized gaze targets (-1..1; (0,0) = looking at the camera).
+// Normalized gaze targets (-1..1; (0,0) = looking at the camera). Values chosen for
+// clear, legible contrast between conversational states (tunable).
 export const GAZE = {
-  camera: { x: 0, y: 0 } as Vec2,
-  idle: { x: 0.0, y: 0.15 } as Vec2, // slightly down/relaxed when nobody's talking
-  aversion: { x: -0.35, y: 0.4 } as Vec2, // up/away while "thinking"
+  camera: { x: 0, y: 0 } as Vec2, // engaged: looking right at the partner
+  idle: { x: 0.55, y: -0.45 } as Vec2, // disengaged: glance away/down in silence
+  aversion: { x: -0.5, y: 0.55 } as Vec2, // "thinking": look up and away
 };
 
 export interface TurnPosture {
@@ -25,18 +26,18 @@ export interface TurnPosture {
 
 // turn.state → attentive posture. Editable.
 export const TURN_POSTURE: Record<string, TurnPosture> = {
-  user_speaking: { gaze: GAZE.camera, browRaise: 0.0, durationMs: 350 },
-  user_yielding: { gaze: GAZE.camera, browRaise: 0.3, durationMs: 300 },
-  agent_should_speak: { gaze: GAZE.camera, browRaise: 0.15, blink: true, durationMs: 200 },
-  agent_speaking: { gaze: GAZE.camera, browRaise: 0.0, durationMs: 300 },
-  mutual_silence: { gaze: GAZE.idle, browRaise: 0.0, durationMs: 500 },
+  user_speaking: { gaze: GAZE.camera, browRaise: 0.15, durationMs: 350 }, // lean in, attentive
+  user_yielding: { gaze: GAZE.camera, browRaise: 0.6, durationMs: 250 }, // anticipatory brow raise
+  agent_should_speak: { gaze: GAZE.aversion, browRaise: 0.3, blink: true, durationMs: 250 }, // glance away to "think"
+  agent_speaking: { gaze: GAZE.camera, browRaise: 0.1, durationMs: 300 },
+  mutual_silence: { gaze: GAZE.idle, browRaise: 0.0, durationMs: 600 }, // disengage
 };
 
 // backchannel.cue → quick brow flash (no head channel on this rig).
-export const BACKCHANNEL = { browRaise: 0.5, upMs: 120, downMs: 220 };
+export const BACKCHANNEL = { browRaise: 0.8, upMs: 110, downMs: 240 };
 
 // nod.cue → eye "dip" surrogate (down then back) per cycle, since there's no head.
-export const NOD = { dip: 0.4, perCycleMs: 190 };
+export const NOD = { dip: 0.5, perCycleMs: 190 };
 
 export interface FaceChannels {
   gazeX?: string;
