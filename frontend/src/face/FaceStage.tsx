@@ -12,6 +12,7 @@ import { useMicCapture } from "../capture/useMicCapture";
 import { useBrowserSpeech } from "../capture/useBrowserSpeech";
 import { DevControls } from "./devControls";
 import { PipelinePanel, type PipelineInfo, type DialogueState } from "./PipelinePanel";
+import { ProviderBar } from "./ProviderBar";
 
 // Our own GLB, hosted under frontend/public/assets/.
 const GLB_URL = `${import.meta.env.BASE_URL}assets/face.glb`;
@@ -41,6 +42,7 @@ function ReticoBridge({
   const [dialogue, setDialogue] = useState<DialogueState>(null);
   const [asrLoading, setAsrLoading] = useState(false);
   const [asrNotice, setAsrNotice] = useState<string | null>(null);
+  const [activeProviders, setActiveProviders] = useState<Record<string, string>>({});
   const activityRef = useRef<Record<string, number>>({});
   const rtRef = useRef(rt);
   rtRef.current = rt;
@@ -87,6 +89,13 @@ function ReticoBridge({
     wsRef.current?.sendJSON({ type: "control", action: "set_asr_source", source });
   };
 
+  // ASR keeps its own path because switching it also starts/stops the browser
+  // recogniser and can involve a lazy model load; the rest are a plain control message.
+  const setProvider = (kind: string, id: string) => {
+    if (kind === "asr") return setAsrSourceRemote(id);
+    wsRef.current?.sendJSON({ type: "control", action: "set_provider", kind, id });
+  };
+
   // Browser STT only runs when the backend is consuming it; switching to Whisper hands
   // transcription to the backend, so release the recognizer's own mic capture.
   useEffect(() => {
@@ -126,6 +135,26 @@ function ReticoBridge({
         setMode(h.mode ?? null);
         setAsrSource(h.asr_source ?? null);
         setPipeline(h.pipeline ?? null);
+        const reg = h.pipeline?.providers;
+        if (reg) {
+          setActiveProviders(
+            Object.fromEntries(
+              Object.entries(reg)
+                .map(([k, v]) => [k, v.active ?? ""])
+                .filter(([, v]) => v),
+            ) as Record<string, string>,
+          );
+        }
+        return;
+      }
+      if (e.type === "provider.state") {
+        const { kind, id, state, detail } = e.payload;
+        if (state === "active") {
+          setActiveProviders((p) => ({ ...p, [kind]: id }));
+          setAsrNotice(null);
+        } else if (state === "unavailable") {
+          setAsrNotice(`${kind}: ${id} unavailable${detail ? ` — ${detail}` : ""}`);
+        }
         return;
       }
       // Record client-side arrival time per event type for the pipeline "active" glow.
@@ -209,6 +238,7 @@ function ReticoBridge({
           dialogue={dialogue}
           activityRef={activityRef}
           asrSource={asrSource}
+          activeProviders={activeProviders}
         />
       )}
     <div className="absolute left-3 top-3 rounded bg-neutral-950/70 px-3 py-2 text-xs text-neutral-100 backdrop-blur">
@@ -222,27 +252,12 @@ function ReticoBridge({
         >
           {listening ? "● listening" : "listen"}
         </button>
-        <span className="ml-1 flex items-center gap-1">
-          <span className="opacity-50">asr:</span>
-          {(pipeline?.asr_options ?? ["browser", "whisper"]).map((opt) => (
-            <button
-              key={opt}
-              disabled={asrLoading}
-              onClick={() => setAsrSourceRemote(opt)}
-              className={`rounded px-1.5 py-0.5 ${
-                asrSource === opt ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"
-              } ${asrLoading ? "opacity-50" : ""}`}
-              title={
-                opt === "browser"
-                  ? "Web Speech API: transcribes in the browser, sends text (Chrome)"
-                  : "retico-whisperasr: transcribes the streamed audio on the backend (local)"
-              }
-            >
-              {opt}
-            </button>
-          ))}
-          {asrLoading && <span className="text-amber-300">loading Whisper…</span>}
-        </span>
+        <ProviderBar
+          registry={pipeline?.providers}
+          active={{ ...activeProviders, asr: asrSource ?? activeProviders.asr }}
+          busyKind={asrLoading ? "asr" : null}
+          onSelect={setProvider}
+        />
       </div>
       {mic.error && <div className="mt-1 text-red-300">mic: {mic.error}</div>}
       {speech.error && <div className="mt-1 text-red-300">stt: {speech.error}</div>}

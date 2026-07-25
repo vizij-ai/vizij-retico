@@ -2,6 +2,18 @@ import { useEffect, useState, type MutableRefObject } from "react";
 import type { ReticoEvent } from "../net/wsClient";
 import { describeEvent } from "./ExplainPanel";
 
+export type ProviderOption = {
+  id: string;
+  label: string;
+  note?: string;
+  requires_key?: boolean;
+  available?: boolean;
+};
+export type ProviderRegistry = Record<
+  string,
+  { active?: string | null; options: ProviderOption[] }
+>;
+
 export type PipelineInfo = {
   mode?: string;
   capture?: string;
@@ -12,6 +24,7 @@ export type PipelineInfo = {
   llm?: { model?: string; gated_on_turn?: boolean };
   tts?: string;
   lipsync?: string;
+  providers?: ProviderRegistry;
 } | null;
 
 export type DialogueState = { state: string; text: string } | null;
@@ -38,6 +51,7 @@ export function PipelinePanel({
   dialogue,
   activityRef,
   asrSource,
+  activeProviders = {},
 }: {
   pipeline: PipelineInfo;
   mode: string | null;
@@ -47,6 +61,7 @@ export function PipelinePanel({
   dialogue: DialogueState;
   activityRef: MutableRefObject<Record<string, number>>;
   asrSource: string | null;
+  activeProviders?: Record<string, string>;
 }) {
   // Re-render on a timer so the "active" glow fades as events go stale.
   const [, setTick] = useState(0);
@@ -64,6 +79,13 @@ export function PipelinePanel({
   const maai = mode === "maai";
   const p = pipeline ?? {};
   const whisper = asrSource === "whisper";
+
+  /** Human label for whichever provider a stage is currently using. */
+  const providerLabel = (kind: string): string | null => {
+    const id = activeProviders[kind] ?? p.providers?.[kind]?.active;
+    if (!id) return null;
+    return p.providers?.[kind]?.options.find((o) => o.id === id)?.label ?? id;
+  };
 
   const audioNote = whisper
     ? "turn-taking + Whisper ASR"
@@ -164,7 +186,9 @@ export function PipelinePanel({
       depth: 0,
       icon: "🧠",
       name: "LLM dialogue",
-      wired: `${p.llm?.model ?? "?"}${p.llm?.gated_on_turn ? " · gated on turn" : ""}`,
+      wired: `${providerLabel("llm") ?? p.llm?.model ?? "?"}${
+        p.llm?.gated_on_turn ? " · gated on turn" : ""
+      }`,
       note: "receives the transcript, whichever ASR produced it",
       activeKeys: ["dialogue.state"],
       value: !dialogue
@@ -184,7 +208,7 @@ export function PipelinePanel({
     depth: 0,
     icon: "🔊",
     name: "TTS",
-    wired: p.tts ?? "gTTS",
+    wired: providerLabel("tts") ?? p.tts ?? "gTTS",
     activeKeys: ["speech.audio"],
     value: speaking ? "speaking…" : "idle",
   });
