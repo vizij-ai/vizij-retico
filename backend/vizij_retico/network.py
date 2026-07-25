@@ -51,6 +51,7 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
     from .affect import make_emote_handler
     from .classifiers import MaaiClassifiers
     from .dialogue import LLMModule
+    from .tts_module import TTSModule
     from .web_input import WebInputModule
 
     web_in = WebInputModule(hub)
@@ -62,7 +63,6 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
         hub.broadcast(framer.frame("dialogue.state", {"state": state, "text": detail}))
 
     llm = LLMModule(
-        speak=hub.say_handler,  # set in start()
         base_url=CONFIG.llm_base_url,
         model=CONFIG.llm_model,
         system=CONFIG.llm_system,
@@ -94,6 +94,9 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
     browser_asr.subscribe(gate)
     gate.subscribe(bridge)
     gate.subscribe(llm)
+    # Streamed clauses -> speech, spoken in generation order.
+    tts = TTSModule(say=hub.say_handler)  # say_handler is set in start()
+    llm.subscribe(tts)
 
     def _asr_status(state: str, detail: str) -> None:
         hub.broadcast(
@@ -149,7 +152,7 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
     if CONFIG.asr_source == "whisper":
         switcher.set_source("whisper")  # brings Whisper up in the background
 
-    return web_in, [web_in, turn, bc, nod, browser_asr, gate, llm, bridge]
+    return web_in, [web_in, turn, bc, nod, browser_asr, gate, llm, tts, bridge]
 
 
 def start(mode: str = "fake") -> RunningNetwork:

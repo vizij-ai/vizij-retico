@@ -8,6 +8,7 @@ later for better quality. Replies are spoken via the provided `speak` callback
 
 from __future__ import annotations
 
+import json
 import re
 import threading
 import time
@@ -15,7 +16,27 @@ from typing import Callable, Optional
 
 import requests
 import retico_core
-from retico_core.text import SpeechRecognitionIU
+from retico_core.text import GeneratedTextIU, SpeechRecognitionIU
+
+# Where to break a streamed reply into speakable clauses. Prefer sentence boundaries —
+# each synthesized chunk is a separate audio file, so splitting mid-sentence makes the
+# delivery sound chopped. Commas are only a fallback for a sentence that runs long
+# enough that waiting for the full stop would delay speech.
+_SENTENCE_END = re.compile(r"[.!?;:]\s")
+MIN_CLAUSE_CHARS = 24
+LONG_CLAUSE_CHARS = 110
+
+
+def _split_point(buf: str) -> Optional[int]:
+    """Index to cut `buf` at, or None to keep buffering."""
+    match = _SENTENCE_END.search(buf)
+    if match and match.end() >= MIN_CLAUSE_CHARS:
+        return match.end()
+    if len(buf) >= LONG_CLAUSE_CHARS:
+        comma = buf.rfind(", ")
+        if comma >= MIN_CLAUSE_CHARS:
+            return comma + 2
+    return None
 
 # Strip reasoning blocks that "thinking" models (e.g. Qwen3) may emit, so they never
 # reach TTS. The second pattern catches a block that was cut off before its closing tag
@@ -49,6 +70,52 @@ def resolve_model(base_url: str, configured: str, api_key: str = "") -> Optional
         return None
 
 
+def chat_stream(
+    base_url: str,
+    model: str,
+    messages: list[dict],
+    timeout: float = 60.0,
+    max_tokens: int = 300,
+    api_key: str = "",
+):
+    """Yield reply text incrementally from a streamed chat completion.
+
+    Streaming is what makes the dialogue *incremental*: the first clause can be spoken
+    while the rest is still being generated, instead of waiting for the whole reply.
+    """
+    r = requests.post(
+        _join(base_url, "chat/completions"),
+        headers=_auth(api_key),
+        json={
+            "model": model,
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": max_tokens,
+            "stream": True,
+        },
+        timeout=timeout,
+        stream=True,
+    )
+    r.raise_for_status()
+    for raw in r.iter_lines():
+        if not raw:
+            continue
+        line = raw.decode("utf-8", "replace").strip()
+        if not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if data == "[DONE]":
+            break
+        try:
+            delta = json.loads(data)["choices"][0].get("delta") or {}
+        except (json.JSONDecodeError, KeyError, IndexError):
+            continue
+        # Same reasoning-channel quirk as the non-streaming path (LM Studio + Qwen3).
+        piece = delta.get("content") or delta.get("reasoning_content") or ""
+        if piece:
+            yield piece
+
+
 def chat(
     base_url: str,
     model: str,
@@ -79,8 +146,13 @@ def chat(
     return reply
 
 
-class LLMModule(retico_core.AbstractConsumingModule):
-    """Consumes committed ASR text, generates a reply, and speaks it."""
+class LLMModule(retico_core.AbstractModule):
+    """Committed ASR text in, incremental reply text out.
+
+    Produces `GeneratedTextIU`s clause by clause as the model streams, so a downstream
+    TTS module can start speaking before generation has finished — the dialogue itself
+    is incremental, not just the perception.
+    """
 
     @staticmethod
     def name() -> str:
@@ -88,18 +160,21 @@ class LLMModule(retico_core.AbstractConsumingModule):
 
     @staticmethod
     def description() -> str:
-        return "Turns committed ASR transcripts into spoken replies via an OpenAI-compatible LLM."
+        return "Streams replies to committed ASR transcripts via an OpenAI-compatible LLM."
 
     @staticmethod
     def input_ius():
         return [SpeechRecognitionIU]
+
+    @staticmethod
+    def output_iu():
+        return GeneratedTextIU
 
     # Turn states (from the VAP turn-taking model) in which the agent may take the floor.
     GO_STATES = frozenset({"agent_should_speak"})
 
     def __init__(
         self,
-        speak: Callable[[str], None],
         base_url: str,
         model: str = "",
         system: str = "",
@@ -111,8 +186,8 @@ class LLMModule(retico_core.AbstractConsumingModule):
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
-        self.speak = speak
         self.provider_id = ""
+        self._last_out = None  # previous outgoing IU, for the incremental chain
         self.api_key = ""
         # Appended to the system prompt for providers that need control tokens (Qwen3's
         # "/no_think"); kept out of the base persona so cloud models never see them.
@@ -238,6 +313,51 @@ class LLMModule(retico_core.AbstractConsumingModule):
             self._busy = True
         threading.Thread(target=self._reply, args=(text,), daemon=True).start()
 
+    def _emit_clause(self, clause: str, first: bool = False) -> None:
+        """Publish one speakable clause downstream (TTS) as an ADD."""
+        iu = self.create_iu(self._last_out)
+        iu.payload = clause
+        iu.text = clause
+        self._last_out = iu
+        self.append(retico_core.UpdateMessage.from_iu(iu, retico_core.UpdateType.ADD))
+        if first and self.emote is not None:
+            # Set the expression as speech starts rather than after the whole reply.
+            self.emote(clause)
+
+    def _commit_reply(self) -> None:
+        """Mark end-of-utterance so TTS knows no more clauses are coming."""
+        if self._last_out is None:
+            return
+        self.append(
+            retico_core.UpdateMessage.from_iu(self._last_out, retico_core.UpdateType.COMMIT)
+        )
+        self._last_out = None
+
+    def _stream_reply(self, messages: list[dict], user_text: str) -> str:
+        """Stream the reply, emitting each clause as soon as it's complete."""
+        buffer = ""
+        full = ""
+        first = True
+        for piece in chat_stream(
+            self.base_url, self._model or "", messages, api_key=self.api_key
+        ):
+            buffer += piece
+            full += piece
+            # Flush every complete clause the buffer now contains.
+            while True:
+                cut = _split_point(buffer)
+                if cut is None:
+                    break
+                clause = clean_reply(buffer[:cut])
+                buffer = buffer[cut:]
+                if clause:
+                    self._emit_clause(clause, first=first)
+                    first = False
+        tail = clean_reply(buffer)
+        if tail:
+            self._emit_clause(tail, first=first)
+        return clean_reply(full)
+
     def _reply(self, text: str) -> None:
         try:
             if self.status is not None:
@@ -251,13 +371,15 @@ class LLMModule(retico_core.AbstractConsumingModule):
             system = self._system_prompt()
             messages = ([{"role": "system", "content": system}] if system else [])
             messages += self._history[-8:]
-            reply = chat(self.base_url, self._model, messages, api_key=self.api_key)
+            reply = self._stream_reply(messages, text)
             if not reply:
-                # Small "thinking" models occasionally return nothing usable. Retry once
-                # with a larger budget before giving up on the turn.
+                # Streaming produced nothing usable (small "thinking" models sometimes
+                # do this). Fall back to one non-streamed attempt with a bigger budget.
                 reply = chat(
                     self.base_url, self._model, messages, max_tokens=512, api_key=self.api_key
                 )
+                if reply:
+                    self._emit_clause(reply, first=True)
             print(f"[llm] user={text!r} -> {reply!r}")
             if not reply:
                 # Never feed "" to TTS — and drop the dangling user message, otherwise
@@ -265,13 +387,12 @@ class LLMModule(retico_core.AbstractConsumingModule):
                 self._history.pop()
                 print("[llm] empty reply after retry — turn dropped")
                 return
+            self._commit_reply()
             self._history.append({"role": "assistant", "content": reply})
-            # Express affect just before speaking so the face is set as the audio starts.
-            if self.emote is not None:
-                self.emote(reply)
             if self.status is not None:
                 self.status("spoke", reply)
-            self.speak(reply)
+            # Stay muted for roughly as long as the reply takes to speak, so the agent
+            # doesn't answer its own TTS bleeding back through the mic.
             self._muted_until = time.monotonic() + self.cooldown + len(reply) / 12.0
         except Exception as exc:
             print(f"[llm] error: {exc}")
