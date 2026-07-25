@@ -52,6 +52,8 @@ class WebSocketHub:
         self.simulate_turn_handler: Optional[Callable[[], None]] = None
         # Set by the network: switches the active ASR source at runtime.
         self.set_asr_source_handler: Optional[Callable[[str], None]] = None
+        # Set by the network: switches any pipeline stage's provider (kind, id).
+        self.set_provider_handler: Optional[Callable[[str, str], None]] = None
         # Set by the network: broadcasts a cue event on demand (debug harness).
         self.emit_cue_handler: Optional[Callable[[str, dict], None]] = None
         # Advertised to clients in the hello message (e.g. "fake" | "maai").
@@ -59,6 +61,9 @@ class WebSocketHub:
         # Advertised to clients so the browser only runs Web Speech STT when the
         # backend is actually consuming it ("browser" | "whisper").
         self.asr_source: str = "browser"
+        # Which provider each pipeline stage is currently using.
+        self.active_providers: dict[str, str] = {}
+        self.tts_provider: str = "gtts"
         # Descriptor of the active pipeline stages (set by the network); sent in hello so
         # the debug pipeline preview can show what's wired.
         self.pipeline: dict[str, Any] = {}
@@ -146,6 +151,9 @@ class WebSocketHub:
             cue = data.get("cue")
             if cue and self.emit_cue_handler is not None:
                 self.emit_cue_handler(str(cue), data.get("payload") or {})
+        elif typ == "control" and data.get("action") == "set_provider":
+            if self.set_provider_handler is not None:
+                self.set_provider_handler(str(data.get("kind", "")), str(data.get("id", "")))
         elif typ == "control" and data.get("action") == "set_asr_source":
             if self.set_asr_source_handler is not None:
                 self.set_asr_source_handler(str(data.get("source", "browser")))

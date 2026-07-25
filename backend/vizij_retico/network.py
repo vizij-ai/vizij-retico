@@ -14,6 +14,7 @@ from typing import Any
 
 import retico_core
 
+from . import providers
 from .config import CONFIG
 from .events import EventFramer
 from .hub import WebSocketHub
@@ -104,6 +105,47 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
 
     switcher = AsrSwitcher(hub, gate, web_in, on_status=_asr_status)
     hub.set_asr_source_handler = switcher.set_source
+
+    # --- provider switching (asr | llm | tts) --------------------------------
+    def _set_provider(kind: str, provider_id: str) -> None:
+        spec = providers.get(kind, provider_id)
+        if spec is None:
+            print(f"[providers] unknown {kind} provider {provider_id!r}")
+            return
+        if not spec.available:
+            hub.broadcast(
+                framer.frame(
+                    "provider.state",
+                    {"kind": kind, "id": provider_id, "state": "unavailable", "detail": spec.note},
+                )
+            )
+            return
+        if kind == "asr":
+            switcher.set_source(provider_id)  # emits its own asr.source events
+            return
+        if kind == "llm":
+            llm.set_provider(provider_id, spec.settings)
+        elif kind == "tts":
+            hub.tts_provider = provider_id
+        else:
+            return
+        hub.active_providers[kind] = provider_id
+        hub.pipeline["providers"] = providers.describe(hub.active_providers)
+        hub.broadcast(
+            framer.frame("provider.state", {"kind": kind, "id": provider_id, "state": "active"})
+        )
+
+    hub.set_provider_handler = _set_provider
+    # Apply the configured LLM provider (falls back to lmstudio if e.g. no Gemini key).
+    llm_spec = providers.get("llm", CONFIG.llm_provider)
+    if llm_spec is None or not llm_spec.available:
+        if llm_spec is not None:
+            print(f"[providers] llm {CONFIG.llm_provider!r} unavailable ({llm_spec.note}); using lmstudio")
+        llm_spec = providers.get("llm", "lmstudio")
+    if llm_spec is not None:
+        llm.set_provider(llm_spec.id, llm_spec.settings)
+        hub.active_providers["llm"] = llm_spec.id
+
     if CONFIG.asr_source == "whisper":
         switcher.set_source("whisper")  # brings Whisper up in the background
 
@@ -117,6 +159,12 @@ def start(mode: str = "fake") -> RunningNetwork:
     # background, and the switcher flips the source once it's actually ready (so a slow
     # or failed model load can't leave the graph with no ASR at all).
     hub.asr_source = "browser"
+    hub.tts_provider = CONFIG.tts_provider
+    hub.active_providers = {
+        "asr": hub.asr_source,
+        "llm": CONFIG.llm_provider,
+        "tts": CONFIG.tts_provider,
+    }
     # Descriptor for the debug pipeline preview: what's wired at each stage.
     if mode == "maai":
         hub.pipeline = {
@@ -127,8 +175,10 @@ def start(mode: str = "fake") -> RunningNetwork:
             "nod": True,
             "asr_options": ["browser", "whisper"],  # switchable at runtime
             "llm": {"model": CONFIG.llm_model or "auto-detect", "gated_on_turn": True},
-            "tts": "gTTS",
+            "tts": CONFIG.tts_provider,
             "lipsync": "amplitude (jaw_open); visemes available, not wired",
+            # Full registry (options + availability) for the provider selector.
+            "providers": providers.describe(hub.active_providers),
         }
     else:
         hub.pipeline = {"mode": "fake", "turn_taking": "synthetic (FakeTurnModule)", "tts": "gTTS"}

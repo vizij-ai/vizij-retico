@@ -28,11 +28,20 @@ def clean_reply(content: str) -> str:
     return _OPEN_THINK_RE.sub("", _THINK_RE.sub("", content or "")).strip()
 
 
-def resolve_model(base_url: str, configured: str) -> Optional[str]:
+def _auth(api_key: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
+
+def _join(base_url: str, path: str) -> str:
+    """Gemini's base_url must keep its trailing slash, so join defensively."""
+    return f"{base_url.rstrip('/')}/{path}"
+
+
+def resolve_model(base_url: str, configured: str, api_key: str = "") -> Optional[str]:
     if configured:
         return configured
     try:
-        r = requests.get(f"{base_url}/models", timeout=5)
+        r = requests.get(_join(base_url, "models"), headers=_auth(api_key), timeout=5)
         r.raise_for_status()
         data = r.json().get("data", [])
         return data[0]["id"] if data else None
@@ -46,9 +55,11 @@ def chat(
     messages: list[dict],
     timeout: float = 60.0,
     max_tokens: int = 300,
+    api_key: str = "",
 ) -> str:
     r = requests.post(
-        f"{base_url}/chat/completions",
+        _join(base_url, "chat/completions"),
+        headers=_auth(api_key),
         json={
             "model": model,
             "messages": messages,
@@ -101,6 +112,11 @@ class LLMModule(retico_core.AbstractConsumingModule):
     ) -> None:
         super().__init__(**kwargs)
         self.speak = speak
+        self.provider_id = ""
+        self.api_key = ""
+        # Appended to the system prompt for providers that need control tokens (Qwen3's
+        # "/no_think"); kept out of the base persona so cloud models never see them.
+        self.system_suffix = ""
         # Optional: derive + broadcast the agent's affect from the reply (face expression).
         self.emote = emote
         # Optional: report dialogue state (waiting_for_turn | thinking | spoke) for the
@@ -127,6 +143,25 @@ class LLMModule(retico_core.AbstractConsumingModule):
         self._turn_state = ""
         self._timer: Optional[threading.Timer] = None
         self._lock = threading.Lock()
+
+    def set_provider(self, provider_id: str, settings: dict) -> None:
+        """Point the module at a different OpenAI-compatible endpoint at runtime.
+
+        Clears the resolved model so the new provider's model is picked up, and drops the
+        conversation history — it belongs to the previous model's context.
+        """
+        with self._lock:
+            self.provider_id = provider_id
+            self.base_url = str(settings.get("base_url", self.base_url)).rstrip("/")
+            self.configured_model = str(settings.get("model", "") or "")
+            self.api_key = str(settings.get("api_key", "") or "")
+            self.system_suffix = str(settings.get("system_suffix", "") or "")
+            self._model = None
+            self._history = []
+        print(f"[llm] provider -> {provider_id} ({self.base_url}, model={self.configured_model or 'auto'})")
+
+    def _system_prompt(self) -> str:
+        return f"{self.system}{self.system_suffix}" if self.system else ""
 
     def process_update(self, update_message):
         for iu, ut in update_message:
@@ -208,18 +243,21 @@ class LLMModule(retico_core.AbstractConsumingModule):
             if self.status is not None:
                 self.status("thinking", text)
             if self._model is None:
-                self._model = resolve_model(self.base_url, self.configured_model)
+                self._model = resolve_model(self.base_url, self.configured_model, self.api_key)
             if not self._model:
-                print("[llm] no model — is LM Studio running with a model loaded on", self.base_url, "?")
+                print(f"[llm] no model available at {self.base_url} (provider={self.provider_id})")
                 return
             self._history.append({"role": "user", "content": text})
-            messages = ([{"role": "system", "content": self.system}] if self.system else [])
+            system = self._system_prompt()
+            messages = ([{"role": "system", "content": system}] if system else [])
             messages += self._history[-8:]
-            reply = chat(self.base_url, self._model, messages)
+            reply = chat(self.base_url, self._model, messages, api_key=self.api_key)
             if not reply:
                 # Small "thinking" models occasionally return nothing usable. Retry once
                 # with a larger budget before giving up on the turn.
-                reply = chat(self.base_url, self._model, messages, max_tokens=512)
+                reply = chat(
+                    self.base_url, self._model, messages, max_tokens=512, api_key=self.api_key
+                )
             print(f"[llm] user={text!r} -> {reply!r}")
             if not reply:
                 # Never feed "" to TTS — and drop the dangling user message, otherwise
