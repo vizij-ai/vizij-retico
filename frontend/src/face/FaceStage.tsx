@@ -24,7 +24,7 @@ const assetBundle: VizijAssetBundle = {
 };
 
 /** Registers the retico input driver and owns the WebSocket connection. */
-function ReticoBridge() {
+function ReticoBridge({ headRef }: { headRef: React.RefObject<HTMLDivElement | null> }) {
   const rt = useVizijRuntime();
   const [status, setStatus] = useState<WsStatus>("connecting");
   const [last, setLast] = useState<ReticoEvent | null>(null);
@@ -180,6 +180,7 @@ function ReticoBridge() {
       createReticoDriver(wsRef.current, controls, animateValue, {
         faceId: faceId ?? "face",
         setInput,
+        headElement: () => headRef.current,
       }),
     );
     lifecycle.start(); // idempotent
@@ -290,11 +291,16 @@ function ReticoBridge() {
 
 export function FaceStage() {
   const [dev, setDev] = useState(false);
+  // Wraps the face canvas so the driver can apply head motion (nod/shake/tilt) as a
+  // transform — the rig's head transform isn't writable from this runtime build.
+  const headRef = useRef<HTMLDivElement | null>(null);
   return (
     <VizijRuntimeProvider assetBundle={assetBundle} autostart>
       <div className="relative h-full w-full">
-        <VizijRuntimeFace />
-        <ReticoBridge />
+        <div ref={headRef} className="h-full w-full will-change-transform">
+          <VizijRuntimeFace />
+        </div>
+        <ReticoBridge headRef={headRef} />
         <button
           className="absolute right-3 top-3 rounded bg-neutral-700 px-2 py-1 text-xs text-neutral-100 hover:bg-neutral-600"
           onClick={() => setDev((d) => !d)}

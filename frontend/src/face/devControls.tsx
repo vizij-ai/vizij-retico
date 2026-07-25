@@ -50,6 +50,7 @@ export function DevControls() {
       faceId,
       set: (path: string, v: number) =>
         setInput(buildRigInputPath(faceId ?? "face", path), { float: v }),
+      get: (path: string) => rt.getValueSnapshot?.(buildRigInputPath(faceId ?? "face", path)),
       animate: (path: string, v: number, ms = 400) =>
         animateValue(buildRigInputPath(faceId ?? "face", path), { float: v }, {
           duration: ms / 1000,

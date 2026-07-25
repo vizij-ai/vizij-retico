@@ -40,8 +40,32 @@ export const TURN_POSTURE: Record<string, TurnPosture> = {
 // backchannel.cue → quick brow flash (no head channel on this rig).
 export const BACKCHANNEL = { browRaise: 0.8, upMs: 110, downMs: 240 };
 
-// nod.cue → eye "dip" surrogate (down then back) per cycle, since there's no head.
-export const NOD = { dip: 0.5, perCycleMs: 190 };
+// nod.cue → head motion, applied as a CSS transform on the element wrapping the face
+// canvas rather than through the rig.
+//
+// Why not the rig: the GLB *does* have a whole-head transform node (`Face_Tran_Rot_C`,
+// the parent of every face part) and the rig graph exposes it, but only as a *computed*
+// value — `/propsrig/face_tran_rot_c/rotation/x` is a clamp node fed by
+// baseline + override. The writable inputs are
+// `rig/<faceId>/override/propsrig_face_tran_rot_c_rotation_x/{enabled,value}`, and this
+// runtime build does not surface any `override/*` path in `inputConstraints`
+// (0 of 1356), nor does `resolveFaceControls` expose a head control. Writing the
+// computed path appears to work only until the graph re-evaluates, then snaps back.
+// So head motion lives at the compositing layer until vizij-web exposes the override
+// inputs (or a head pose is authored into the rig bundle). See docs/07.
+export const HEAD = {
+  /** Nod: drop + pitch forward, repeated. */
+  nod: { pitchDeg: 8, dropPx: 16, halfPeriodMs: 170 },
+  /** Shake: yaw side to side — a "no" gesture. */
+  shake: { yawDeg: 9, halfPeriodMs: 150, cycles: 2 },
+  /** Tilt: roll, held while a quizzical emotion is active. */
+  tilt: { rollDeg: 6, ms: 450 },
+  restMs: 280,
+  perspectivePx: 1400,
+};
+
+// nod.cue → small eye "dip" layered under the head nod as an accent.
+export const NOD = { dip: 0.22, perCycleMs: 190 };
 
 // The rig's base emotion poses (verified on quori_latest: each blends brow+eye+mouth
 // into a legible expression, so we drive these rather than the subtle individual

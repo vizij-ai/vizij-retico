@@ -17,6 +17,7 @@ import {
   EMOTION_BLEND,
   EMOTION_POSE,
   GAZE,
+  HEAD,
   LIPSYNC,
   NOD,
   TURN_POSTURE,
@@ -33,10 +34,20 @@ export type AnimateFn = (
 
 export type SetInputFn = (path: string, value: { float: number }) => void;
 
+/** Head pose in CSS units (degrees / pixels). */
+interface HeadPose {
+  pitch: number;
+  yaw: number;
+  roll: number;
+  drop: number;
+}
+
 /** Runtime handles the driver needs beyond the resolved controls. */
 export interface RigHandles {
   faceId: string;
   setInput: SetInputFn;
+  /** Element wrapping the face canvas, transformed for head motion. */
+  headElement?: () => HTMLElement | null;
 }
 
 const clamp = (v: number, lo = -1, hi = 1) => Math.min(hi, Math.max(lo, v));
@@ -69,6 +80,65 @@ export function createReticoDriver(
     const rigPath = (p: string) => buildRigInputPath(rig.faceId, p);
     const animRig = (p: string, v: number, ms: number) =>
       void animate(rigPath(p), { float: v }, { duration: ms / 1000, easing: "easeInOut" });
+
+    // --- head motion (compositing layer; see HEAD in reticoMapping for why) ---
+    let headBusy = false;
+    let tiltDeg = 0; // held while a quizzical emotion is active
+
+    const applyHead = (
+      { pitch = 0, yaw = 0, roll = tiltDeg, drop = 0 }: Partial<HeadPose>,
+      ms: number,
+    ) => {
+      const el = rig.headElement?.();
+      if (!el) return;
+      el.style.transition = `transform ${ms}ms ease-in-out`;
+      el.style.transform =
+        `perspective(${HEAD.perspectivePx}px) translateY(${drop}px) ` +
+        `rotateX(${pitch}deg) rotateY(${yaw}deg) rotateZ(${roll}deg)`;
+    };
+    const headRestore = (ms = HEAD.restMs) => applyHead({}, ms);
+
+    /** Nod `count` times: drop + pitch forward, back up, repeat, then settle. */
+    const headNod = (count: number) => {
+      if (headBusy) return;
+      headBusy = true;
+      const { pitchDeg, dropPx, halfPeriodMs } = HEAD.nod;
+      let i = 0;
+      const down = () => {
+        if (i >= count) {
+          headRestore();
+          headBusy = false;
+          return;
+        }
+        i += 1;
+        applyHead({ pitch: pitchDeg, drop: dropPx }, halfPeriodMs);
+        window.setTimeout(() => {
+          applyHead({}, halfPeriodMs);
+          window.setTimeout(down, halfPeriodMs);
+        }, halfPeriodMs);
+      };
+      down();
+    };
+
+    /** Shake side to side — a "no" gesture. Exported on the driver for future cues. */
+    const headShake = () => {
+      if (headBusy) return;
+      headBusy = true;
+      const { yawDeg, halfPeriodMs, cycles } = HEAD.shake;
+      let i = 0;
+      const swing = (dir: number) => {
+        if (i >= cycles * 2) {
+          headRestore();
+          headBusy = false;
+          return;
+        }
+        i += 1;
+        applyHead({ yaw: yawDeg * dir }, halfPeriodMs);
+        window.setTimeout(() => swing(-dir), halfPeriodMs);
+      };
+      swing(1);
+    };
+    void headShake;
 
     const animScalar = (
       control: ScalarControl,
@@ -122,21 +192,17 @@ export function createReticoDriver(
         setGaze(baseGaze.x, baseGaze.y, p.durationMs);
       }
     };
-    const onBackchannel = () => blinkOnce(); // no brow/head on this rig → blink acknowledges
+    const onBackchannel = () => blinkOnce(); // brief acknowledgement
     const onNod = (e: ReticoEvent) => {
       const count = Math.max(1, Math.round(e.payload.count ?? 1));
+      // A real head nod, with a small synchronized eye dip as an accent.
+      headNod(count);
       const dip = (e.payload.amplitude ?? 0.7) * NOD.dip;
-      let i = 0;
-      const cycle = () => {
-        if (i >= count) return setGaze(baseGaze.x, baseGaze.y, NOD.perCycleMs);
-        i += 1;
-        setGaze(baseGaze.x, baseGaze.y + dip, NOD.perCycleMs);
-        window.setTimeout(() => {
-          setGaze(baseGaze.x, baseGaze.y, NOD.perCycleMs);
-          window.setTimeout(cycle, NOD.perCycleMs);
-        }, NOD.perCycleMs);
-      };
-      cycle();
+      setGaze(baseGaze.x, baseGaze.y + dip, NOD.perCycleMs);
+      window.setTimeout(
+        () => setGaze(baseGaze.x, baseGaze.y, NOD.perCycleMs),
+        HEAD.nod.halfPeriodMs * 2 * count,
+      );
     };
     const onGaze = (e: ReticoEvent) => {
       baseGaze = { x: e.payload.x ?? 0, y: e.payload.y ?? 0 };
@@ -159,6 +225,10 @@ export function createReticoDriver(
         animRig(path, clamp(w * amt, 0, 1), EMOTION.fadeMs);
       }
       currentEmotion = Object.keys(blend).length ? key : null;
+      // A head tilt reads as puzzlement far more strongly than the face pose alone.
+      const wantsTilt = key === "concerned" || key === "confused";
+      tiltDeg = wantsTilt ? HEAD.tilt.rollDeg * amt : 0;
+      if (!headBusy) applyHead({}, HEAD.tilt.ms);
     };
     const onEmotion = (e: ReticoEvent) => {
       if (fadeTimer !== null) {
@@ -246,6 +316,7 @@ export function createReticoDriver(
         started = true;
         baseGaze = { ...GAZE.camera };
         setGaze(baseGaze.x, baseGaze.y, 300); // camera-facing baseline
+        headRestore(300);
         lastTurnAt = performance.now();
         unsub = ws.addEventListener(dispatch);
         // Idle watchdog: if turn events stop (e.g. mic off), ease back to the camera
@@ -271,6 +342,9 @@ export function createReticoDriver(
           fadeTimer = null;
         }
         setEmotion("neutral", 0); // release any held expression
+        tiltDeg = 0;
+        headBusy = false;
+        headRestore(200); // never leave the head off-axis
         setJaw(0);
         audioCtx?.close().catch(() => {});
         audioCtx = null;

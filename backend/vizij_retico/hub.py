@@ -52,6 +52,8 @@ class WebSocketHub:
         self.simulate_turn_handler: Optional[Callable[[], None]] = None
         # Set by the network: switches the active ASR source at runtime.
         self.set_asr_source_handler: Optional[Callable[[str], None]] = None
+        # Set by the network: broadcasts a cue event on demand (debug harness).
+        self.emit_cue_handler: Optional[Callable[[str, dict], None]] = None
         # Advertised to clients in the hello message (e.g. "fake" | "maai").
         self.mode: str = "fake"
         # Advertised to clients so the browser only runs Web Speech STT when the
@@ -137,6 +139,13 @@ class WebSocketHub:
             threading.Thread(
                 target=self.say_handler, args=(data.get("text", ""),), daemon=True
             ).start()
+        elif typ == "control" and data.get("action") == "emit_cue":
+            # Debug harness: broadcast a cue event (nod.cue, backchannel.cue,
+            # emotion.affect, …) without waiting for a model to fire it. Lets the face
+            # behaviours be exercised and reviewed on demand.
+            cue = data.get("cue")
+            if cue and self.emit_cue_handler is not None:
+                self.emit_cue_handler(str(cue), data.get("payload") or {})
         elif typ == "control" and data.get("action") == "set_asr_source":
             if self.set_asr_source_handler is not None:
                 self.set_asr_source_handler(str(data.get("source", "browser")))

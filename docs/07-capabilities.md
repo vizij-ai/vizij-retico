@@ -115,7 +115,31 @@ carry a faint mirrored smile (emotion pose) — four capabilities on one face wi
 coherence *is* the contribution, and the arbitration policy that achieves it is the editable
 mapping ([04](04-iu-animation-mapping.md)).
 
-## 7.8 Known gaps / honesty for the paper
+## 7.8 How head motion is actually implemented (rig constraint)
+
+Head nods/shakes/tilts are applied as a **CSS transform on the element wrapping the face
+canvas**, not through the rig. This is worth stating plainly because the obvious
+assumption ("the rig has no head") is wrong, and so is the next one ("then just drive
+it").
+
+The GLB *does* have a whole-head transform node — `Face_Tran_Rot_C`, the parent of every
+face part — and the rig graph exposes `/propsrig/face_tran_rot_c/{rotation,translation,
+scale}/{x,y,z}`. But those semantic paths are **computed** nodes (a `clamp` fed by
+`baseline + override`), not writable inputs. The writable inputs are
+`rig/<faceId>/override/propsrig_face_tran_rot_c_<channel>/{enabled,value}`, and the
+current `@vizij/runtime-react` build surfaces **none** of the 452 `override/*` paths in
+`inputConstraints` (0 of 1356 listed inputs), nor does `resolveFaceControls` expose a
+head control (it covers eyes, eyelids, blink only). Writing the computed path appears to
+work until the rig graph next re-evaluates, then snaps back — which makes it useless for
+sustained motion.
+
+So: compositing-layer head motion is a deliberate, documented workaround, and it is
+honest to describe it as such. The rig-native path opens up if vizij-web either exposes
+the `override/*` inputs or ships a head pose in the rig bundle; the mapping in
+`frontend/src/drivers/reticoMapping.ts` is structured so only `HEAD` and `applyHead`
+would change.
+
+## 7.9 Known gaps / honesty for the paper
 
 - **Nod/backchannel timing quality** depends entirely on MaAI's predictors; we render them, we do
   not improve them. Frame accordingly.

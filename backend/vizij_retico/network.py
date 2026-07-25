@@ -70,6 +70,9 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
     )
     # Test harness: a simulated user turn opens the floor gate so the reply is prompt.
     hub.simulate_turn_handler = lambda: llm.notify_turn("agent_should_speak")
+    # Debug harness: broadcast a cue (nod.cue, backchannel.cue, emotion.affect, …) so the
+    # face behaviours can be exercised without waiting for a model to fire them.
+    hub.emit_cue_handler = lambda cue, payload: hub.broadcast(framer.frame(cue, payload))
     # Feed the derived turn state to the LLM so it only replies when the floor is the
     # agent's (agent_should_speak), instead of on every ASR commit.
     classifiers = MaaiClassifiers(on_turn_state=llm.notify_turn)
