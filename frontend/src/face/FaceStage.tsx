@@ -312,8 +312,13 @@ export function FaceStage() {
           <VizijRuntimeFace />
         </div>
         <ReticoBridge headRef={headRef} showPanel={showPanels} />
-        {/* Toggle buttons: lit when their panel is showing. */}
-        <div className="absolute right-3 top-3 flex gap-1 text-xs text-neutral-100">
+        {/* Toggle buttons: lit when their panel is showing. Kept above the dev panel
+            (z-20) and shifted clear of it when open, so the way out is always visible. */}
+        <div
+          className={`absolute top-3 z-20 flex gap-1 text-xs text-neutral-100 ${
+            dev ? "right-[25rem]" : "right-3"
+          }`}
+        >
           <button
             className={`rounded px-2 py-1 ${showPanels ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
             onClick={() => setShowPanels((p) => !p)}
