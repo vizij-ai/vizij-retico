@@ -73,6 +73,22 @@ class WebSocketHub:
     def build_app(self) -> FastAPI:
         app = FastAPI(title="vizij-retico hub")
 
+        # The frontend is served from a different origin in dev (Vite on :5173), and the
+        # TTS routes are plain HTTP rather than the WebSocket, so they need CORS.
+        from fastapi.middleware.cors import CORSMiddleware
+
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],  # local dev tool; not exposed publicly as-is
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
+        from . import polly
+        from .config import CONFIG
+
+        polly.register_routes(app, CONFIG.polly_voice)
+
         @app.get("/health")
         async def health() -> dict[str, Any]:
             return {

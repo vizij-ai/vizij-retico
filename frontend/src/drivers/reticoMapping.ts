@@ -128,16 +128,47 @@ export const EMOTION_ALIASES: Record<string, string> = {
 };
 export const EMOTION = { holdAfterSpeechMs: 1200, fadeMs: 500 };
 
-// speech.audio → jaw opening driven by playback amplitude. jaw_open is 0..1; gain scales
-// RMS (~0..0.25) up to that range, clamped by max. Verified: jaw_open cleanly opens the
-// mouth. (Phoneme viseme poses /poses/pose_{a,e,i,o,u,…}.weight exist for higher-fidelity
-// lip-sync later, but need phoneme timing we don't get from gTTS.)
+// speech.audio → mouth. Two modes, chosen by whether the event carries speech marks:
+//
+// 1. Visemes (AWS Polly): phoneme-timed marks drive the rig's viseme poses — real mouth
+//    shapes, in sync with the audio.
+// 2. Amplitude (gTTS and anything else without marks): jaw_open follows playback RMS.
+//    The mouth opens and closes but never forms shapes; it's the honest fallback.
 export const LIPSYNC = {
   channel: "/standard/vizij/mouth/morph/jaw_open",
   gain: 3.5,
   max: 1.0,
   smoothing: 0.5, // 0..1 low-pass toward the new amplitude each frame
+  /** Cross-fade between viseme poses. Short — phonemes are ~60-120 ms apart. */
+  visemeFadeMs: 55,
+  /** A little jaw under the visemes stops the mouth reading as flat. */
+  visemeJaw: 0.25,
 };
+
+// Polly viseme code -> this rig's viseme pose id. Mirrors POLLY_TO_FACE_SEGMENT in
+// @vizij/speech-react (kept here rather than taking the dependency, so the mapping is
+// editable alongside the rest of the IU->animation config). "sil" = mouth closed.
+export const POLLY_VISEME_POSE: Record<string, string> = {
+  p: "pose_p",
+  t: "pose_t",
+  T: "pose_t_2",
+  s: "pose_s",
+  S: "pose_s",
+  f: "pose_f",
+  k: "pose_k",
+  i: "pose_i",
+  r: "pose_r",
+  l: "pose_r",
+  u: "pose_u",
+  a: "pose_a",
+  e: "pose_e_2",
+  E: "pose_e",
+  o: "pose_o",
+  O: "pose_o_2",
+  "@": "pose_pzzzfnvy",
+};
+
+export const visemePosePath = (poseId: string) => `/poses/${poseId}.weight`;
 
 export interface FaceChannels {
   gazeX?: string;

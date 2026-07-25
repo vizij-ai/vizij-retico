@@ -21,7 +21,9 @@ import {
   HEAD,
   LIPSYNC,
   NOD,
+  POLLY_VISEME_POSE,
   TURN_POSTURE,
+  visemePosePath,
 } from "./reticoMapping";
 
 export type FaceControls = ReturnType<typeof resolveFaceControls>;
@@ -261,22 +263,55 @@ export function createReticoDriver(
     let audioCtx: AudioContext | null = null;
     const setJaw = (v: number) =>
       rig.setInput(rigPath(LIPSYNC.channel), { float: clamp(v, 0, LIPSYNC.max) });
-    const onSpeech = async (e: ReticoEvent) => {
-      try {
-        if (!audioCtx) audioCtx = new AudioContext();
-        if (audioCtx.state === "suspended") await audioCtx.resume();
-        const buf = await audioCtx.decodeAudioData(base64ToArrayBuffer(e.payload.data));
-        const src = audioCtx.createBufferSource();
-        src.buffer = buf;
-        const analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 512;
-        const data = new Uint8Array(analyser.fftSize);
-        src.connect(analyser);
-        analyser.connect(audioCtx.destination);
+    // Viseme lip-sync: only one viseme pose is raised at a time, so the mouth can't
+    // smear into a blend of every phoneme in the utterance.
+    let activeViseme: string | null = null;
+    const setViseme = (poseId: string | null) => {
+      if (poseId === activeViseme) return;
+      if (activeViseme) animRig(visemePosePath(activeViseme), 0, LIPSYNC.visemeFadeMs);
+      if (poseId) animRig(visemePosePath(poseId), 1, LIPSYNC.visemeFadeMs);
+      activeViseme = poseId;
+    };
 
-        let level = 0;
-        let raf = 0;
-        const pump = () => {
+    const onSpeech = (e: ReticoEvent) => {
+      // Polly-style speech marks: [{time: ms, type: "viseme", value: "p"}, …].
+      const marks: { t: number; pose: string | null }[] = (e.payload.visemes ?? []).map(
+        (m: { time?: number; value?: string }) => ({
+          t: Number(m.time) || 0,
+          pose: POLLY_VISEME_POSE[String(m.value ?? "")] ?? null, // "sil" → null
+        }),
+      );
+      const useVisemes = marks.length > 0;
+
+      // The mouth animation runs off its own clock and starts immediately, so it is not
+      // hostage to audio: if playback is blocked (autoplay policy) or decoding fails,
+      // the face still speaks rather than freezing mid-utterance.
+      let analyser: AnalyserNode | null = null;
+      let data = new Uint8Array(0);
+      let level = 0;
+      let next = 0;
+      let raf = 0;
+      let finished = false;
+      const startedAt = performance.now();
+
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        cancelAnimationFrame(raf);
+        window.clearTimeout(guard);
+        setViseme(null); // release the last phoneme
+        setJaw(0); // close the mouth
+      };
+
+      const pump = () => {
+        if (useVisemes) {
+          // Advance to whichever mark the playhead has reached.
+          const elapsed = performance.now() - startedAt;
+          let pose = activeViseme;
+          while (next < marks.length && marks[next].t <= elapsed) pose = marks[next++].pose;
+          setViseme(pose);
+          setJaw(pose ? LIPSYNC.visemeJaw : 0);
+        } else if (analyser) {
           analyser.getByteTimeDomainData(data);
           let sum = 0;
           for (let i = 0; i < data.length; i++) {
@@ -286,17 +321,36 @@ export function createReticoDriver(
           const rms = Math.sqrt(sum / data.length); // ~0..0.3 for speech
           level += (rms * LIPSYNC.gain - level) * LIPSYNC.smoothing;
           setJaw(level);
-          raf = requestAnimationFrame(pump);
-        };
-        src.onended = () => {
-          cancelAnimationFrame(raf);
-          setJaw(0); // close the mouth
-        };
-        src.start();
-        pump();
-      } catch {
-        /* ignore */
-      }
+        }
+        raf = requestAnimationFrame(pump);
+      };
+
+      // Backstop: end the animation even if audio never plays (so `onended` never fires).
+      const lastMark = marks.length ? marks[marks.length - 1].t : 0;
+      const guard = window.setTimeout(finish, lastMark + 1500);
+      pump();
+
+      void (async () => {
+        try {
+          if (!audioCtx) audioCtx = new AudioContext();
+          const buf = await audioCtx.decodeAudioData(base64ToArrayBuffer(e.payload.data));
+          const src = audioCtx.createBufferSource();
+          src.buffer = buf;
+          analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 512;
+          data = new Uint8Array(analyser.fftSize);
+          src.connect(analyser);
+          analyser.connect(audioCtx.destination);
+          src.onended = finish;
+          // Don't await resume(): a blocked AudioContext leaves it pending forever.
+          if (audioCtx.state === "suspended") void audioCtx.resume();
+          src.start();
+          window.clearTimeout(guard);
+          window.setTimeout(finish, buf.duration * 1000 + 400); // in case onended is missed
+        } catch (err) {
+          console.warn("[retico] speech playback failed; animating without audio", err);
+        }
+      })();
     };
 
     const dispatch = (e: ReticoEvent) => {
@@ -313,7 +367,7 @@ export function createReticoDriver(
         case "emotion.fer":
           return onEmotion(e);
         case "speech.audio":
-          return void onSpeech(e);
+          return onSpeech(e);
         case "speech.end":
           return scheduleEmotionRelease();
         default:
@@ -359,6 +413,7 @@ export function createReticoDriver(
           fadeTimer = null;
         }
         setEmotion("neutral", 0); // release any held expression
+        setViseme(null);
         tiltDeg = 0;
         headBusy = false;
         headRestore(200); // never leave the head off-axis

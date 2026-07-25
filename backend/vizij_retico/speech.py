@@ -37,8 +37,24 @@ def make_say_handler(hub: WebSocketHub, framer: EventFramer) -> Callable[[str], 
             return
         counter["n"] += 1
         utterance_id = f"u_{counter['n']}"
+        visemes: list[dict] = []
+        provider = getattr(hub, "tts_provider", "gtts")
         try:
-            mp3 = synthesize_mp3(text)
+            if provider == "polly":
+                from . import polly
+                from .config import CONFIG
+
+                try:
+                    speech = polly.synthesize(text, CONFIG.polly_voice)
+                    mp3 = speech.audio
+                    visemes = speech.marks.get("visemes", [])
+                except Exception as exc:
+                    # Never lose the utterance to a TTS outage — say it with gTTS and
+                    # fall back to amplitude lip-sync.
+                    print(f"[tts] polly failed ({exc}); falling back to gTTS")
+                    mp3 = synthesize_mp3(text)
+            else:
+                mp3 = synthesize_mp3(text)
         except Exception as exc:  # network / gTTS failure
             hub.broadcast(
                 framer.frame("speech.error", {"utteranceId": utterance_id, "error": str(exc)})
@@ -52,6 +68,9 @@ def make_say_handler(hub: WebSocketHub, framer: EventFramer) -> Callable[[str], 
                     "text": text,
                     "format": "audio/mpeg;base64",
                     "data": base64.b64encode(mp3).decode("ascii"),
+                    # Present only for providers that return speech marks; the driver
+                    # falls back to amplitude lip-sync when this is empty.
+                    "visemes": visemes,
                 },
             )
         )
