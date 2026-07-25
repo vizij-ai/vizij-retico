@@ -26,11 +26,23 @@ function getSRClass(): (new () => SR) | null {
   return w.SpeechRecognition || w.webkitSpeechRecognition || null;
 }
 
+// Errors that mean this browser will never produce results (as opposed to routine
+// silence), so the caller can fall back to backend ASR instead of failing silently.
+const FATAL_ERRORS = new Set([
+  "not-allowed",
+  "service-not-allowed",
+  "audio-capture",
+  "network",
+  "language-not-supported",
+]);
+
 export function useBrowserSpeech(getWs: () => WsClient | null) {
   const supported = typeof window !== "undefined" && !!getSRClass();
   const [listening, setListening] = useState(false);
   const [partial, setPartial] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [fatal, setFatal] = useState<string | null>(null);
+  const [results, setResults] = useState(0); // finals delivered — proves it works
   const srRef = useRef<SR | null>(null);
   const wantRef = useRef(false); // keep restarting while the user wants to listen
 
@@ -63,7 +75,10 @@ export function useBrowserSpeech(getWs: () => WsClient | null) {
         const text = res[0]?.transcript ?? "";
         if (res.isFinal) {
           const final = text.trim();
-          if (final) getWs()?.sendJSON({ type: "input.asr", payload: { text: final, final: true } });
+          if (final) {
+            setResults((n) => n + 1);
+            getWs()?.sendJSON({ type: "input.asr", payload: { text: final, final: true } });
+          }
         } else {
           interim += text;
         }
@@ -72,7 +87,16 @@ export function useBrowserSpeech(getWs: () => WsClient | null) {
     };
     sr.onerror = (e: any) => {
       // "no-speech"/"aborted" are routine; surface the rest.
-      if (e?.error && e.error !== "no-speech" && e.error !== "aborted") setError(String(e.error));
+      const code = e?.error ? String(e.error) : "";
+      if (code && code !== "no-speech" && code !== "aborted") {
+        setError(code);
+        // A fatal code means retrying won't help — stop looping and let the caller
+        // fall back to backend ASR rather than sitting there transcribing nothing.
+        if (FATAL_ERRORS.has(code)) {
+          wantRef.current = false;
+          setFatal(code);
+        }
+      }
     };
     sr.onend = () => {
       setPartial("");
@@ -93,10 +117,11 @@ export function useBrowserSpeech(getWs: () => WsClient | null) {
       sr.start();
       setListening(true);
       setError(null);
+      setFatal(null);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [getWs]);
 
-  return { supported, listening, partial, error, start, stop };
+  return { supported, listening, partial, error, fatal, results, start, stop };
 }

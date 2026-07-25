@@ -34,6 +34,7 @@ function ReticoBridge() {
   const [pipeline, setPipeline] = useState<PipelineInfo>(null);
   const [dialogue, setDialogue] = useState<DialogueState>(null);
   const [asrLoading, setAsrLoading] = useState(false);
+  const [asrNotice, setAsrNotice] = useState<string | null>(null);
   const activityRef = useRef<Record<string, number>>({});
   const rtRef = useRef(rt);
   rtRef.current = rt;
@@ -86,6 +87,19 @@ function ReticoBridge() {
     if (!useBrowserAsr && speech.listening) speech.stop();
     else if (useBrowserAsr && listening && !speech.listening && speech.supported) speech.start();
   }, [useBrowserAsr, listening, speech.listening, speech.supported, speech.start, speech.stop]);
+
+  // If this browser's speech service can't work (no mic permission, offline speech
+  // service, Chromium build without it), fall back to backend Whisper instead of
+  // silently transcribing nothing.
+  useEffect(() => {
+    if (speech.fatal && useBrowserAsr) {
+      setAsrNotice(
+        `browser STT unavailable (${speech.fatal}) — switched to Whisper on the backend`,
+      );
+      setAsrSourceRemote("whisper");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [speech.fatal, useBrowserAsr]);
 
   // Browser STT partials are frontend-only (not WS events) — mark activity so the
   // pipeline's ASR stage glows while the user is mid-utterance.
@@ -223,6 +237,13 @@ function ReticoBridge() {
       </div>
       {mic.error && <div className="mt-1 text-red-300">mic: {mic.error}</div>}
       {speech.error && <div className="mt-1 text-red-300">stt: {speech.error}</div>}
+      {asrNotice && <div className="mt-1 text-amber-300">{asrNotice}</div>}
+      {useBrowserAsr && listening && !speech.error && (
+        <div className="mt-1 opacity-60">
+          stt: {speech.listening ? "recognizer running" : "starting…"} · {speech.results} result
+          {speech.results === 1 ? "" : "s"}
+        </div>
+      )}
       <div className="mt-2 flex gap-1">
         <input
           className="w-56 rounded bg-neutral-800 px-2 py-1 text-neutral-100 outline-none"
