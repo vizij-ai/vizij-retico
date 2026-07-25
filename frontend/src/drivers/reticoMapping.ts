@@ -40,6 +40,20 @@ export const TURN_POSTURE: Record<string, TurnPosture> = {
 // backchannel.cue → quick brow flash (no head channel on this rig).
 export const BACKCHANNEL = { browRaise: 0.8, upMs: 110, downMs: 240 };
 
+// Blinking. Cue-driven blinks (turn transitions, backchannels) are sparse by design, and
+// the rig's built-in idle animation is switched off so it can't fight the driver — so
+// without a spontaneous blink the face just stares. Humans blink every ~2–8 s; the
+// jittered interval keeps it from looking metronomic.
+export const BLINK = {
+  closeMs: 80,
+  openMs: 120,
+  holdMs: 90,
+  /** Ignore a new blink this soon after the last one (stops cue bursts flickering). */
+  minGapMs: 900,
+  idleMinMs: 2800,
+  idleMaxMs: 6500,
+};
+
 // nod.cue → head motion, applied as a CSS transform on the element wrapping the face
 // canvas rather than through the rig.
 //

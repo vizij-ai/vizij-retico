@@ -312,24 +312,24 @@ export function FaceStage() {
           <VizijRuntimeFace />
         </div>
         <ReticoBridge headRef={headRef} showPanel={showPanels} />
-        <div className="absolute right-3 top-3 flex gap-1">
+        {/* Toggle buttons: lit when their panel is showing. */}
+        <div className="absolute right-3 top-3 flex gap-1 text-xs text-neutral-100">
           <button
-            className="rounded bg-neutral-700 px-2 py-1 text-xs text-neutral-100 hover:bg-neutral-600"
+            className={`rounded px-2 py-1 ${showPanels ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
             onClick={() => setShowPanels((p) => !p)}
-            title="Hide the pipeline panel and dev sliders for a clean view of the face"
+            title="Show/hide the pipeline panel"
           >
-            {showPanels ? "hide panels" : "show panels"}
+            pipeline
           </button>
-          {showPanels && (
-            <button
-              className="rounded bg-neutral-700 px-2 py-1 text-xs text-neutral-100 hover:bg-neutral-600"
-              onClick={() => setDev((d) => !d)}
-            >
-              {dev ? "hide dev" : "dev"}
-            </button>
-          )}
+          <button
+            className={`rounded px-2 py-1 ${dev ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
+            onClick={() => setDev((d) => !d)}
+            title="Show/hide the dev sliders"
+          >
+            dev
+          </button>
         </div>
-        {showPanels && dev && <DevControls />}
+        {dev && <DevControls />}
       </div>
     </VizijRuntimeProvider>
   );

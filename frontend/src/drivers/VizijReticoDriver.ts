@@ -12,6 +12,7 @@ import {
 } from "@vizij/runtime-react";
 import type { ReticoEvent, WsClient } from "../net/wsClient";
 import {
+  BLINK,
   EMOTION,
   EMOTION_ALIASES,
   EMOTION_BLEND,
@@ -73,7 +74,7 @@ export function createReticoDriver(
     let lastBlinkAt = 0;
     let lastTurnAt = 0;
     let idleWatch: number | null = null;
-    const MIN_BLINK_GAP_MS = 900;
+    let idleBlinkTimer: number | null = null;
     const IDLE_RETURN_MS = 3500; // ease back to camera if no turn events arrive for this long
 
     // Absolute rig path for a raw input channel (poses, jaw, …).
@@ -166,10 +167,20 @@ export function createReticoDriver(
     };
     const blinkOnce = () => {
       const now = performance.now();
-      if (now - lastBlinkAt < MIN_BLINK_GAP_MS) return; // rate-limit blinks
+      if (now - lastBlinkAt < BLINK.minGapMs) return; // rate-limit blinks
       lastBlinkAt = now;
-      setLids(1, 80);
-      window.setTimeout(() => setLids(0, 120), 90);
+      setLids(1, BLINK.closeMs);
+      window.setTimeout(() => setLids(0, BLINK.openMs), BLINK.holdMs);
+    };
+
+    /** Spontaneous blinking, so the face stays alive between conversational cues. */
+    const scheduleIdleBlink = () => {
+      const { idleMinMs, idleMaxMs } = BLINK;
+      const delay = idleMinMs + Math.random() * (idleMaxMs - idleMinMs);
+      idleBlinkTimer = window.setTimeout(() => {
+        blinkOnce();
+        scheduleIdleBlink();
+      }, delay);
     };
 
     const onTurn = (e: ReticoEvent) => {
@@ -317,6 +328,8 @@ export function createReticoDriver(
         baseGaze = { ...GAZE.camera };
         setGaze(baseGaze.x, baseGaze.y, 300); // camera-facing baseline
         headRestore(300);
+        setLids(0, 120); // start with eyes open
+        scheduleIdleBlink();
         lastTurnAt = performance.now();
         unsub = ws.addEventListener(dispatch);
         // Idle watchdog: if turn events stop (e.g. mic off), ease back to the camera
@@ -336,6 +349,10 @@ export function createReticoDriver(
         if (idleWatch !== null) {
           window.clearInterval(idleWatch);
           idleWatch = null;
+        }
+        if (idleBlinkTimer !== null) {
+          window.clearTimeout(idleBlinkTimer);
+          idleBlinkTimer = null;
         }
         if (fadeTimer !== null) {
           window.clearTimeout(fadeTimer);

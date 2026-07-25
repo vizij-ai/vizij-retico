@@ -19,17 +19,33 @@ class Config:
     #    (fully local/offline). Audio is streamed to the backend for turn-taking either way.
     asr_source: str = os.environ.get("ASR_SOURCE", "browser")
 
-    # LLM (OpenAI-compatible; LM Studio by default). Swap base_url/model for a cloud
-    # provider later. Empty model => auto-detect the first loaded model.
+    # Which LLM provider is selected at startup ("lmstudio" | "gemini"); switchable at
+    # runtime from the UI. See providers.py for the registry.
+    llm_provider: str = os.environ.get("LLM_PROVIDER", "lmstudio")
+
+    # LM Studio (OpenAI-compatible, local). Empty model => auto-detect the first loaded one.
     llm_base_url: str = os.environ.get("LLM_BASE_URL", "http://localhost:1234/v1")
     llm_model: str = os.environ.get("LLM_MODEL", "")
-    # The trailing "/no_think" disables Qwen3's chain-of-thought so it answers directly
-    # and fast (harmless text for non-Qwen models). Drop it for a cloud model if unwanted.
+
+    # Gemini speaks the OpenAI protocol, so it's the same client with a different
+    # base_url + a bearer key. The trailing slash matters (without it: 404).
+    gemini_base_url: str = os.environ.get(
+        "GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/"
+    )
+    gemini_model: str = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    gemini_api_key: str = os.environ.get("GEMINI_API_KEY", "")
+
+    # Base persona. Provider-specific suffixes (e.g. Qwen3's "/no_think") are appended
+    # by the provider spec, so a cloud model never sees a local model's control tokens.
     llm_system: str = os.environ.get(
         "LLM_SYSTEM",
         "You are a warm, concise embodied assistant on a screen. Reply in one or two "
-        "short, natural spoken sentences. No emojis or markdown. /no_think",
+        "short, natural spoken sentences. No emojis or markdown.",
     )
+
+    # TTS provider ("gtts" | "polly"). Polly also gives phoneme-timed visemes.
+    tts_provider: str = os.environ.get("TTS_PROVIDER", "gtts")
+    polly_voice: str = os.environ.get("POLLY_VOICE", "Joanna")
 
 
 CONFIG = Config()
