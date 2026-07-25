@@ -145,27 +145,33 @@ export const LIPSYNC = {
   visemeJaw: 0.25,
 };
 
-// Polly viseme code -> this rig's viseme pose id. Mirrors POLLY_TO_FACE_SEGMENT in
+// Polly viseme code -> this rig's viseme pose id. Based on POLLY_TO_FACE_SEGMENT in
 // @vizij/speech-react (kept here rather than taking the dependency, so the mapping is
 // editable alongside the rest of the IU->animation config). "sil" = mouth closed.
+//
+// Every target below is verified to exist in face.glb. Note the one deviation from
+// speech-react: it maps "@" to `pose_pzzzfnvy`, which belongs to a different face and is
+// NOT in this rig — that would have silently dropped the schwa, the vowel in "about" and
+// one of the commonest sounds in English. This rig's equivalent is `pose_at`, which the
+// runtime's VISEME_POSE_KEYS also lists as a viseme.
 export const POLLY_VISEME_POSE: Record<string, string> = {
-  p: "pose_p",
+  p: "pose_p", // also covers b/m — Polly folds all bilabials into "p"
   t: "pose_t",
-  T: "pose_t_2",
+  T: "pose_t_2", // "th"
   s: "pose_s",
-  S: "pose_s",
+  S: "pose_s", // "sh" — no separate pose on this rig
   f: "pose_f",
   k: "pose_k",
   i: "pose_i",
   r: "pose_r",
-  l: "pose_r",
+  l: "pose_r", // no "l" pose; "r" is the closest tongue-up shape
   u: "pose_u",
   a: "pose_a",
-  e: "pose_e_2",
+  e: "pose_e_2", // "eh"
   E: "pose_e",
   o: "pose_o",
   O: "pose_o_2",
-  "@": "pose_pzzzfnvy",
+  "@": "pose_at", // schwa
 };
 
 export const visemePosePath = (poseId: string) => `/poses/${poseId}.weight`;

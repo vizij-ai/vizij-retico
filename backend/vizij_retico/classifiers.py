@@ -47,7 +47,18 @@ class MaaiClassifiers:
             "BackchannelIU": self.backchannel,
             "NodIU": self.nod,
             "SpeechRecognitionIU": self.asr_text,
+            "AffectIU": self.affect,
         }
+
+    # -- affect ---------------------------------------------------------------
+    def affect(self, iu, ut, framer: EventFramer) -> Optional[dict[str, Any]]:
+        """AffectIU (agent's own emotional state) -> emotion.affect."""
+        if ut != retico_core.UpdateType.ADD:
+            return None
+        payload = getattr(iu, "payload", None) or {}
+        if not payload.get("emotion"):
+            return None
+        return framer.frame("emotion.affect", dict(payload), iu=iu_provenance(iu, ut))
 
     # -- ASR ------------------------------------------------------------------
     def asr_text(self, iu, ut, framer: EventFramer) -> Optional[dict[str, Any]]:

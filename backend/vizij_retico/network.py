@@ -51,7 +51,7 @@ def _build_lite(hub: WebSocketHub, framer: EventFramer):
     cost is that there is no turn-taking model, so the LLM's floor gate has nothing to
     wait for and is disabled; replies fire as soon as a transcript commits.
     """
-    from .affect import make_emote_handler
+    from .affect import AFFECT_INSTRUCTION, AffectModule
     from .browser_asr import BrowserASRModule
     from .classifiers import MaaiClassifiers
     from .dialogue import LLMModule
@@ -63,8 +63,7 @@ def _build_lite(hub: WebSocketHub, framer: EventFramer):
     llm = LLMModule(
         base_url=CONFIG.llm_base_url,
         model=CONFIG.llm_model,
-        system=CONFIG.llm_system,
-        emote=make_emote_handler(hub, framer),
+        system=CONFIG.llm_system + AFFECT_INSTRUCTION,
         status=_status,
         gate_on_turn=False,  # nothing produces turn.state in this profile
     )
@@ -75,6 +74,9 @@ def _build_lite(hub: WebSocketHub, framer: EventFramer):
     browser_asr.subscribe(bridge)
     browser_asr.subscribe(llm)
     llm.subscribe(tts)
+    affect = AffectModule()
+    llm.subscribe(affect)
+    affect.subscribe(bridge)
 
     hub.simulate_turn_handler = lambda: None  # no floor gate to open
     hub.emit_cue_handler = lambda cue, payload: hub.broadcast(framer.frame(cue, payload))
@@ -100,14 +102,14 @@ def _build_lite(hub: WebSocketHub, framer: EventFramer):
         llm.set_provider(llm_spec.id, llm_spec.settings)
         hub.active_providers["llm"] = llm_spec.id
 
-    return browser_asr, [browser_asr, llm, tts, bridge]
+    return browser_asr, [browser_asr, llm, tts, affect, bridge]
 
 
 def _build_maai(hub: WebSocketHub, framer: EventFramer):
     # Imported lazily so the fake path never needs torch/maai installed.
     from retico_maai import TurnTakingModule, BackchannelModule, NodPredictionModule
 
-    from .affect import make_emote_handler
+    from .affect import AFFECT_INSTRUCTION, AffectModule
     from .classifiers import MaaiClassifiers
     from .dialogue import LLMModule
     from .tts_module import TTSModule
@@ -124,8 +126,7 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
     llm = LLMModule(
         base_url=CONFIG.llm_base_url,
         model=CONFIG.llm_model,
-        system=CONFIG.llm_system,
-        emote=make_emote_handler(hub, framer),  # reply text -> emotion.affect
+        system=CONFIG.llm_system + AFFECT_INSTRUCTION,
         status=_status,  # dialogue.state events for the pipeline preview
     )
     # Test harness: a simulated user turn opens the floor gate so the reply is prompt.
@@ -156,6 +157,11 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
     # Streamed clauses -> speech, spoken in generation order.
     tts = TTSModule(say=hub.say_handler)  # say_handler is set in start()
     llm.subscribe(tts)
+    # Affect is a first-class IU rather than a side-channel broadcast, so it can be
+    # revised as better evidence arrives and other modules can subscribe to it.
+    affect = AffectModule()
+    llm.subscribe(affect)
+    affect.subscribe(bridge)
 
     def _asr_status(state: str, detail: str) -> None:
         hub.broadcast(
@@ -211,7 +217,7 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
     if CONFIG.asr_source == "whisper":
         switcher.set_source("whisper")  # brings Whisper up in the background
 
-    return web_in, [web_in, turn, bc, nod, browser_asr, gate, llm, tts, bridge]
+    return web_in, [web_in, turn, bc, nod, browser_asr, gate, llm, tts, affect, bridge]
 
 
 def start(mode: str = "fake") -> RunningNetwork:

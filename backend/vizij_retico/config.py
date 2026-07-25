@@ -44,6 +44,8 @@ class Config:
 
     # Base persona. Provider-specific suffixes (e.g. Qwen3's "/no_think") are appended
     # by the provider spec, so a cloud model never sees a local model's control tokens.
+    # The affect instruction is appended in network.py from affect.AFFECT_INSTRUCTION, so
+    # the label set stays defined next to the code that parses it.
     llm_system: str = os.environ.get(
         "LLM_SYSTEM",
         "You are a warm, concise embodied assistant on a screen. Reply in one or two "

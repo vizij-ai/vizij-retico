@@ -139,7 +139,45 @@ the `override/*` inputs or ships a head pose in the rig bundle; the mapping in
 `frontend/src/drivers/reticoMapping.ts` is structured so only `HEAD` and `applyHead`
 would change.
 
-## 7.9 Known gaps / honesty for the paper
+## 7.9 How affect is determined (and why it's an IU)
+
+retico-core defines no emotion or affect IU — the inventory is `AudioIU`, `TextIU`,
+`SpeechRecognitionIU`, `GeneratedTextIU`, `DialogueActIU`, `EndOfTurnIU`, `SpeechIU`,
+`RobotStateIU`, `GenericDictIU` and friends. The framework's convention is that you
+**define your own IU subclass and produce it from a module**, which is exactly what
+retico-maai does: `MaaiIU(GenericDictIU)` → `VAPIU` / `BackchannelIU` / `NodIU`.
+
+So we define `AffectIU(GenericDictIU)` carrying
+`{emotion, intensity, source}`, produced by `AffectModule` (reply text in, affect out)
+and consumed by the WebSocket bridge, which classifies it into an `emotion.affect` event.
+
+This is deliberately *not* a direct broadcast from the LLM module, which is what it was
+first. Keeping affect in the IU graph means:
+
+- it can be **revised** — ADD a keyword guess now, REVOKE and re-ADD when the model's own
+  tag or (later) facial-expression recognition of the *user* provides better evidence;
+- anything downstream can **subscribe** to it, not just the browser bridge — a robot
+  driver via `retico-rosbridge` would get affect for free;
+- it is **grounded**: each `AffectIU` points at the `GeneratedTextIU` it came from, so
+  provenance survives into the event stream.
+
+Two sources feed it, in order of preference:
+
+1. **The model declares it.** The system prompt asks for a leading tag —
+   `[happy] Good morning!` — which is stripped before the text reaches TTS. Putting the
+   tag *first* matters: with streaming, the face must be set as the first clause is
+   spoken, not after the reply completes.
+2. **Keyword inference** over the reply text, when the model ignores the instruction.
+   This is not a vestigial fallback — small local models skip the tag often. In testing,
+   qwen3-1.7b tagged "I just got wonderful news!" as `excited` but produced no tag for
+   "My cat died yesterday", which the fallback correctly read as `sad`.
+
+The honest limitation: this is the agent's *intended* affect, declared by the thing
+generating the words. It is not a perception of the user's emotion — that needs the
+camera path (`retico-vision`), which is why `emotion.fer` is defined in the protocol but
+never emitted.
+
+## 7.10 Known gaps / honesty for the paper
 
 - **Nod/backchannel timing quality** depends entirely on MaAI's predictors; we render them, we do
   not improve them. Frame accordingly.

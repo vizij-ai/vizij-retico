@@ -26,6 +26,10 @@ _SENTENCE_END = re.compile(r"[.!?;:]\s")
 MIN_CLAUSE_CHARS = 24
 LONG_CLAUSE_CHARS = 110
 
+# Optional affect tag the model is asked to put at the start of its reply, e.g.
+# "[happy] Good morning!". Stripped before the text reaches TTS.
+_AFFECT_TAG = re.compile(r"^\s*\[([A-Za-z]+)\]\s*")
+
 
 def _split_point(buf: str) -> Optional[int]:
     """Index to cut `buf` at, or None to keep buffering."""
@@ -181,7 +185,6 @@ class LLMModule(retico_core.AbstractModule):
         cooldown: float = 3.0,
         gate_on_turn: bool = True,
         max_wait: float = 4.0,
-        emote: Optional[Callable[[str], None]] = None,
         status: Optional[Callable[[str, str], None]] = None,
         **kwargs,
     ) -> None:
@@ -192,8 +195,9 @@ class LLMModule(retico_core.AbstractModule):
         # Appended to the system prompt for providers that need control tokens (Qwen3's
         # "/no_think"); kept out of the base persona so cloud models never see them.
         self.system_suffix = ""
-        # Optional: derive + broadcast the agent's affect from the reply (face expression).
-        self.emote = emote
+        # Affect the model declared for the current reply (parsed from its leading tag);
+        # attached to the first clause IU for AffectModule to pick up.
+        self._affect: Optional[str] = None
         # Optional: report dialogue state (waiting_for_turn | thinking | spoke) for the
         # debug pipeline preview.
         self.status = status
@@ -314,15 +318,15 @@ class LLMModule(retico_core.AbstractModule):
         threading.Thread(target=self._reply, args=(text,), daemon=True).start()
 
     def _emit_clause(self, clause: str, first: bool = False) -> None:
-        """Publish one speakable clause downstream (TTS) as an ADD."""
+        """Publish one speakable clause downstream (TTS + affect) as an ADD."""
         iu = self.create_iu(self._last_out)
         iu.payload = clause
         iu.text = clause
+        # The model's own affect tag rides on the first clause, so AffectModule can set
+        # the expression as speech begins rather than guessing from the text.
+        iu.affect = self._affect if first else None
         self._last_out = iu
         self.append(retico_core.UpdateMessage.from_iu(iu, retico_core.UpdateType.ADD))
-        if first and self.emote is not None:
-            # Set the expression as speech starts rather than after the whole reply.
-            self.emote(clause)
 
     def _commit_reply(self) -> None:
         """Mark end-of-utterance so TTS knows no more clauses are coming."""
@@ -333,16 +337,31 @@ class LLMModule(retico_core.AbstractModule):
         )
         self._last_out = None
 
-    def _stream_reply(self, messages: list[dict], user_text: str) -> str:
-        """Stream the reply, emitting each clause as soon as it's complete."""
+    def _stream_reply(self, messages: list[dict], user_text: str) -> str:  # noqa: D401
+        """Stream the reply, emitting each clause as soon as it's complete.
+
+        The reply may open with an affect tag (`[happy] ...`); it is stripped here so it
+        never reaches TTS, and it arrives before the first clause, which is exactly when
+        the face needs to be set.
+        """
         buffer = ""
-        full = ""
-        first = True
+        spoken: list[str] = []
+        looking_for_tag = True
+        self._affect = None  # each turn gets its own reading
         for piece in chat_stream(
             self.base_url, self._model or "", messages, api_key=self.api_key
         ):
             buffer += piece
-            full += piece
+            if looking_for_tag:
+                match = _AFFECT_TAG.match(buffer)
+                if match:
+                    self._affect = match.group(1).lower()
+                    buffer = buffer[match.end() :]
+                    looking_for_tag = False
+                elif len(buffer) > 24 or "]" in buffer:
+                    looking_for_tag = False  # no tag coming; don't keep scanning
+                else:
+                    continue  # wait for the tag to finish arriving
             # Flush every complete clause the buffer now contains.
             while True:
                 cut = _split_point(buffer)
@@ -351,12 +370,13 @@ class LLMModule(retico_core.AbstractModule):
                 clause = clean_reply(buffer[:cut])
                 buffer = buffer[cut:]
                 if clause:
-                    self._emit_clause(clause, first=first)
-                    first = False
+                    self._emit_clause(clause, first=not spoken)
+                    spoken.append(clause)
         tail = clean_reply(buffer)
         if tail:
-            self._emit_clause(tail, first=first)
-        return clean_reply(full)
+            self._emit_clause(tail, first=not spoken)
+            spoken.append(tail)
+        return " ".join(spoken)
 
     def _reply(self, text: str) -> None:
         try:
