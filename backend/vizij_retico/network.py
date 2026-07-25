@@ -44,6 +44,65 @@ def _build_fake(hub: WebSocketHub, framer: EventFramer):
     return fake, [fake, bridge]
 
 
+def _build_lite(hub: WebSocketHub, framer: EventFramer):
+    """Dialogue without on-device perception: browser ASR -> LLM -> TTS -> face.
+
+    No torch, no VAP, no local Whisper — this is what the small container ships. The
+    cost is that there is no turn-taking model, so the LLM's floor gate has nothing to
+    wait for and is disabled; replies fire as soon as a transcript commits.
+    """
+    from .affect import make_emote_handler
+    from .browser_asr import BrowserASRModule
+    from .classifiers import MaaiClassifiers
+    from .dialogue import LLMModule
+    from .tts_module import TTSModule
+
+    def _status(state: str, detail: str = "") -> None:
+        hub.broadcast(framer.frame("dialogue.state", {"state": state, "text": detail}))
+
+    llm = LLMModule(
+        base_url=CONFIG.llm_base_url,
+        model=CONFIG.llm_model,
+        system=CONFIG.llm_system,
+        emote=make_emote_handler(hub, framer),
+        status=_status,
+        gate_on_turn=False,  # nothing produces turn.state in this profile
+    )
+    tts = TTSModule(say=hub.say_handler)
+    bridge = VizijWebSocketModule(hub, classifiers=MaaiClassifiers().registry, framer=framer)
+
+    browser_asr = BrowserASRModule(hub)
+    browser_asr.subscribe(bridge)
+    browser_asr.subscribe(llm)
+    llm.subscribe(tts)
+
+    hub.simulate_turn_handler = lambda: None  # no floor gate to open
+    hub.emit_cue_handler = lambda cue, payload: hub.broadcast(framer.frame(cue, payload))
+
+    def _set_provider(kind: str, provider_id: str) -> None:
+        spec = providers.get(kind, provider_id)
+        if spec is None or not spec.available:
+            return
+        if kind == "llm":
+            llm.set_provider(provider_id, spec.settings)
+        elif kind == "tts":
+            hub.tts_provider = provider_id
+        else:
+            return
+        hub.active_providers[kind] = provider_id
+        hub.broadcast(
+            framer.frame("provider.state", {"kind": kind, "id": provider_id, "state": "active"})
+        )
+
+    hub.set_provider_handler = _set_provider
+    llm_spec = providers.get("llm", CONFIG.llm_provider) or providers.get("llm", "lmstudio")
+    if llm_spec is not None:
+        llm.set_provider(llm_spec.id, llm_spec.settings)
+        hub.active_providers["llm"] = llm_spec.id
+
+    return browser_asr, [browser_asr, llm, tts, bridge]
+
+
 def _build_maai(hub: WebSocketHub, framer: EventFramer):
     # Imported lazily so the fake path never needs torch/maai installed.
     from retico_maai import TurnTakingModule, BackchannelModule, NodPredictionModule
@@ -156,6 +215,8 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
 
 
 def start(mode: str = "fake") -> RunningNetwork:
+    # "full" is the container profile name for the on-device perception build.
+    mode = "maai" if mode == "full" else mode
     hub = WebSocketHub(CONFIG.host, CONFIG.port)
     hub.mode = mode
     # Start on the browser path even when whisper is configured: Whisper loads in the
@@ -183,12 +244,22 @@ def start(mode: str = "fake") -> RunningNetwork:
             # Full registry (options + availability) for the provider selector.
             "providers": providers.describe(hub.active_providers),
         }
+    elif mode == "lite":
+        hub.pipeline = {
+            "mode": "lite",
+            "asr_options": ["browser"],
+            "llm": {"model": CONFIG.llm_model or "auto-detect", "gated_on_turn": False},
+            "tts": CONFIG.tts_provider,
+            "lipsync": "visemes (Polly) or amplitude (gTTS)",
+            "providers": providers.describe(hub.active_providers),
+        }
     else:
         hub.pipeline = {"mode": "fake", "turn_taking": "synthetic (FakeTurnModule)", "tts": "gTTS"}
     framer = EventFramer()  # shared by the bridge and the TTS say-handler
     hub.say_handler = make_say_handler(hub, framer)
     hub.start()
-    head, modules = _build_fake(hub, framer) if mode == "fake" else _build_maai(hub, framer)
+    builder = {"fake": _build_fake, "lite": _build_lite}.get(mode, _build_maai)
+    head, modules = builder(hub, framer)
     retico_core.network.run(head)
     return RunningNetwork(hub=hub, head=head, modules=modules)
 

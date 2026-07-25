@@ -11,6 +11,7 @@ something that will fail on first use.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -108,6 +109,9 @@ def tts_providers() -> dict[str, Provider]:
 
 
 def asr_providers() -> dict[str, Provider]:
+    # retico-whisperasr is an optional extra — the "lite" container omits it, so the
+    # option must show as unavailable there rather than failing when selected.
+    whisper_ok = importlib.util.find_spec("retico_whisperasr") is not None
     return {
         "browser": Provider(
             id="browser",
@@ -117,7 +121,12 @@ def asr_providers() -> dict[str, Provider]:
         "whisper": Provider(
             id="whisper",
             label="Whisper (local)",
-            note="retico-whisperasr on the streamed audio",
+            note=(
+                "retico-whisperasr on the streamed audio"
+                if whisper_ok
+                else "not installed (this is the 'lite' build)"
+            ),
+            available=whisper_ok,
         ),
     }
 

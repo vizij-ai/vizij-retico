@@ -8,9 +8,16 @@ from dataclasses import dataclass
 class Config:
     """Runtime configuration, overridable via environment variables."""
 
-    host: str = os.environ.get("VIZIJ_RETICO_HOST", "127.0.0.1")
-    # 8765 is taken by the local claude-sc gateway in this environment; use 8770.
-    port: int = int(os.environ.get("VIZIJ_RETICO_PORT", "8770"))
+    # Cloud Run injects PORT and requires binding on 0.0.0.0; locally we stay on
+    # loopback. (8765 is taken by the local claude-sc gateway, hence 8770.)
+    host: str = os.environ.get("VIZIJ_RETICO_HOST") or (
+        "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1"
+    )
+    port: int = int(os.environ.get("PORT") or os.environ.get("VIZIJ_RETICO_PORT", "8770"))
+
+    # When set, the built frontend is served from this directory by the same server, so
+    # one container serves both the SPA and the WebSocket.
+    static_dir: str = os.environ.get("VIZIJ_RETICO_STATIC", "")
 
     # Which ASR feeds the LLM transcript:
     #  - "browser": Web Speech API in the browser -> text over the WebSocket (default;

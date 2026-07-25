@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import os
 import queue
 import threading
 import time
@@ -130,6 +131,14 @@ class WebSocketHub:
                 pass
             finally:
                 self._clients.discard(sock)
+
+        # Serve the built SPA from the same origin when packaged (one container, one
+        # port). Mounted LAST: a mount at "/" matches everything, so it has to be
+        # registered after /health, /ws and /tts/* or it shadows them.
+        if CONFIG.static_dir and os.path.isdir(CONFIG.static_dir):
+            from fastapi.staticfiles import StaticFiles
+
+            app.mount("/", StaticFiles(directory=CONFIG.static_dir, html=True), name="spa")
 
         return app
 

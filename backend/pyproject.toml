@@ -4,15 +4,26 @@ version = "0.1.0"
 description = "retico incremental-dialogue backend for the vizij-retico expressive face"
 readme = "README.md"
 requires-python = ">=3.11"
+# Base ("lite") install: browser ASR + an OpenAI-compatible LLM + TTS. No torch, so the
+# container stays small and cold-starts fast. `retico-core` is needed for the IU graph
+# itself, which is cheap.
 dependencies = [
+    "boto3>=1.35",
     "fastapi>=0.139.2",
     "gtts>=2.5.4",
+    "requests>=2.32",
     "retico-core>=2.0.0",
-    "retico-maai>=0.1.0",
-    "retico-whisperasr",
     "setuptools>=80,<81",
     "uvicorn[standard]>=0.51.0",
     "websockets>=16.1.1",
+]
+
+[project.optional-dependencies]
+# "full": on-device perception — VAP turn-taking/backchannel/nod and local Whisper.
+# Pulls in torch and multi-GB model weights; only install it if you need maai mode.
+full = [
+    "retico-maai>=0.1.0",
+    "retico-whisperasr",
 ]
 
 [tool.uv.sources]

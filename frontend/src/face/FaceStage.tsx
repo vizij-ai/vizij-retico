@@ -16,7 +16,13 @@ import { ProviderBar } from "./ProviderBar";
 
 // Our own GLB, hosted under frontend/public/assets/.
 const GLB_URL = `${import.meta.env.BASE_URL}assets/face.glb`;
-const WS_URL = `ws://${location.hostname}:8770/ws`;
+// In dev the backend is a separate process on :8770; when packaged, the same server
+// serves this page, so use its origin (and wss:// behind Cloud Run's TLS).
+const WS_URL =
+  (import.meta.env.VITE_WS_URL as string | undefined) ??
+  (import.meta.env.DEV
+    ? `ws://${location.hostname}:8770/ws`
+    : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
 
 const assetBundle: VizijAssetBundle = {
   namespace: "vizij-retico",

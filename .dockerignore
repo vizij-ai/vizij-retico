@@ -1,0 +1,9 @@
+# Keep the build context small — the frontend and backend are rebuilt in the image.
+**/node_modules
+**/.venv
+**/dist
+**/__pycache__
+**/*.pyc
+.git
+docs/figures
+*.log
