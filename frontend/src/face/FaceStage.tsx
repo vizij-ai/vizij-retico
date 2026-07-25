@@ -24,7 +24,13 @@ const assetBundle: VizijAssetBundle = {
 };
 
 /** Registers the retico input driver and owns the WebSocket connection. */
-function ReticoBridge({ headRef }: { headRef: React.RefObject<HTMLDivElement | null> }) {
+function ReticoBridge({
+  headRef,
+  showPanel,
+}: {
+  headRef: React.RefObject<HTMLDivElement | null>;
+  showPanel: boolean;
+}) {
   const rt = useVizijRuntime();
   const [status, setStatus] = useState<WsStatus>("connecting");
   const [last, setLast] = useState<ReticoEvent | null>(null);
@@ -193,16 +199,18 @@ function ReticoBridge({ headRef }: { headRef: React.RefObject<HTMLDivElement | n
   const dot = status === "open" ? "bg-emerald-400" : status === "connecting" ? "bg-amber-400" : "bg-red-400";
   return (
     <>
-      <PipelinePanel
-        pipeline={pipeline}
-        mode={mode}
-        listening={listening}
-        partial={speech.partial}
-        log={log}
-        dialogue={dialogue}
-        activityRef={activityRef}
-        asrSource={asrSource}
-      />
+      {showPanel && (
+        <PipelinePanel
+          pipeline={pipeline}
+          mode={mode}
+          listening={listening}
+          partial={speech.partial}
+          log={log}
+          dialogue={dialogue}
+          activityRef={activityRef}
+          asrSource={asrSource}
+        />
+      )}
     <div className="absolute left-3 top-3 rounded bg-neutral-950/70 px-3 py-2 text-xs text-neutral-100 backdrop-blur">
       <div className="flex items-center gap-2">
         <span className={`inline-block h-2 w-2 rounded-full ${dot}`} />
@@ -291,6 +299,9 @@ function ReticoBridge({ headRef }: { headRef: React.RefObject<HTMLDivElement | n
 
 export function FaceStage() {
   const [dev, setDev] = useState(false);
+  // Collapses the pipeline panel and the dev sliders for an unobstructed view of the
+  // face (demos, screenshots). The connection HUD stays so `listen` is still reachable.
+  const [showPanels, setShowPanels] = useState(true);
   // Wraps the face canvas so the driver can apply head motion (nod/shake/tilt) as a
   // transform — the rig's head transform isn't writable from this runtime build.
   const headRef = useRef<HTMLDivElement | null>(null);
@@ -300,14 +311,25 @@ export function FaceStage() {
         <div ref={headRef} className="h-full w-full will-change-transform">
           <VizijRuntimeFace />
         </div>
-        <ReticoBridge headRef={headRef} />
-        <button
-          className="absolute right-3 top-3 rounded bg-neutral-700 px-2 py-1 text-xs text-neutral-100 hover:bg-neutral-600"
-          onClick={() => setDev((d) => !d)}
-        >
-          {dev ? "hide dev" : "dev"}
-        </button>
-        {dev && <DevControls />}
+        <ReticoBridge headRef={headRef} showPanel={showPanels} />
+        <div className="absolute right-3 top-3 flex gap-1">
+          <button
+            className="rounded bg-neutral-700 px-2 py-1 text-xs text-neutral-100 hover:bg-neutral-600"
+            onClick={() => setShowPanels((p) => !p)}
+            title="Hide the pipeline panel and dev sliders for a clean view of the face"
+          >
+            {showPanels ? "hide panels" : "show panels"}
+          </button>
+          {showPanels && (
+            <button
+              className="rounded bg-neutral-700 px-2 py-1 text-xs text-neutral-100 hover:bg-neutral-600"
+              onClick={() => setDev((d) => !d)}
+            >
+              {dev ? "hide dev" : "dev"}
+            </button>
+          )}
+        </div>
+        {showPanels && dev && <DevControls />}
       </div>
     </VizijRuntimeProvider>
   );
