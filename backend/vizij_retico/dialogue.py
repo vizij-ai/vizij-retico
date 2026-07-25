@@ -49,8 +49,30 @@ _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 _OPEN_THINK_RE = re.compile(r"<think>.*\Z", re.DOTALL | re.IGNORECASE)
 
 
+# Models ignore "no emojis" in the system prompt often enough that it has to be enforced
+# in code: TTS reads them aloud by name ("smiley face emoji"), which is worse than
+# useless in speech. Covers pictographs, dingbats, flags, arrows, plus the ZWJ and
+# variation selectors that glue multi-codepoint sequences together (and would otherwise
+# be left behind as fragments when a sequence is split across stream chunks).
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001f300-\U0001faff"
+    "\U00002600-\U000027bf"
+    "\U0001f1e6-\U0001f1ff"
+    "\U00002190-\U000021ff"
+    "\U00002b00-\U00002bff"
+    "\U0000fe00-\U0000fe0f"
+    "\U0000200d"
+    "]+"
+)
+
+
 def clean_reply(content: str) -> str:
-    return _OPEN_THINK_RE.sub("", _THINK_RE.sub("", content or "")).strip()
+    text = _OPEN_THINK_RE.sub("", _THINK_RE.sub("", content or ""))
+    text = _EMOJI_RE.sub("", text)
+    # Stripping mid-sentence emoji leaves double spaces and " ." artefacts.
+    text = re.sub(r"\s+([.!?,;:])", r"\1", text)
+    return re.sub(r"\s{2,}", " ", text).strip()
 
 
 def _auth(api_key: str) -> dict[str, str]:
