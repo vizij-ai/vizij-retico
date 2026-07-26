@@ -2,39 +2,74 @@
 
 Kept in its own module and imported lazily, because none of this ships by default:
 
-- `retico-vision` and `retico-fer` are git installs, not on PyPI.
-- EmoNet's pretrained weights are a manual download.
-- **EmoNet is CC BY-NC-ND 4.0** — non-commercial and no-derivatives. Fine for research
-  and for the paper; not something to bake into a commercial deployment. The browser
-  (MediaPipe, Apache-2.0) path exists precisely so there is a shippable option.
+- `retico-vision` is a git install; `retico-fer` is not packaged at all and has to be
+  vendored (its modules import each other flatly and it resolves weights by relative
+  path). dlib builds from source, ~3 minutes.
+- **EmoNet is CC BY-NC-ND 4.0** — non-commercial and no-derivatives. This project is
+  research, so that is fine here; the browser (MediaPipe, Apache-2.0) path is what a
+  commercial or publicly-hosted deployment would use.
 
-Install (research use):
+Install:  ./scripts/install-emonet.sh   (~270 MB, gitignored)
 
-    uv pip install git+https://github.com/retico-team/retico-vision.git
-    uv pip install git+https://github.com/retico-team/retico-fer.git
-    # plus EmoNet weights per that repo's README
-
-The browser sends JPEG frames on `hub.video_in` (already plumbed), which this turns into
-the ImageIUs retico-vision expects, so the camera still lives in the browser either way.
+Unlike the MediaPipe path, this one *does* upload the image: the browser sends JPEG
+frames on `hub.video_in`, which this turns into the ImageIUs retico-vision expects. The
+camera still lives in the browser, but the pixels leave it.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import io
+import pathlib
 import queue
+import sys
 
 import retico_core
 
 from .fer import FerIU
 
 
+#: Vendored clones. retico-fer is not a package — its modules import each other flatly
+#: (`from fer_output_iu import ...`), and it resolves EmoNet's weights relative to its own
+#: parent, so the emonet clone has to sit *inside* the retico_fer clone. Both directories
+#: go on sys.path: the outer one for `emonet.models`, the inner for the flat imports.
+_VENDOR = pathlib.Path(__file__).resolve().parents[1] / "vendor" / "retico_fer"
+#: The emonet clone nests its package one level down (clone/emonet/), and fer_module
+#: resolves weights at clone/emonet/pretrained — which this layout satisfies.
+_PATHS = [_VENDOR / "emonet", _VENDOR / "retico_fer"]
+
+
+def _ensure_path() -> None:
+    for path in _PATHS:
+        entry = str(path)
+        if path.is_dir() and entry not in sys.path:
+            sys.path.insert(0, entry)
+
+
 def available() -> bool:
-    """True if both retico-vision and retico-fer are importable."""
+    """True if retico-vision and the vendored retico-fer/EmoNet are all present."""
+    if importlib.util.find_spec("retico_vision") is None:
+        return False
+    _ensure_path()
     return (
-        importlib.util.find_spec("retico_vision") is not None
-        and importlib.util.find_spec("retico_fer") is not None
+        (_VENDOR / "retico_fer" / "fer_module.py").is_file()
+        and (_VENDOR / "emonet" / "emonet" / "models").is_dir()
+        and any((_VENDOR / "emonet" / "pretrained").glob("emonet_*.pth"))
+        and importlib.util.find_spec("dlib") is not None
     )
+
+
+#: EmoNet's labels -> the emotion vocabulary the face mapping understands.
+EMONET_TO_AFFECT = {
+    "neutral": "neutral",
+    "happy": "happy",
+    "sad": "sad",
+    "surprise": "surprise",
+    "fear": "fear",
+    "disgust": "disgust",
+    "anger": "anger",
+    "contempt": "concerned",  # no contempt pose on this rig; concern is the closest read
+}
 
 
 class WebImageModule(retico_core.AbstractProducingModule):
@@ -105,15 +140,20 @@ class EmonetToFerIU(retico_core.AbstractModule):
         for iu, ut in update_message:
             if ut != retico_core.UpdateType.ADD:
                 continue
-            payload = getattr(iu, "payload", None) or {}
-            if not isinstance(payload, dict):
-                continue
+            # FEROutputIU carries .emotion/.valence/.arousal as attributes, not a payload.
+            label = str(getattr(iu, "emotion", "") or "neutral").strip().lower()
+            try:
+                valence = float(getattr(iu, "valence", 0.0) or 0.0)
+                arousal = float(getattr(iu, "arousal", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                valence = arousal = 0.0
             fer = self.create_iu(iu)
             fer.payload = {
-                "emotion": str(payload.get("emotion", "neutral")).lower(),
-                "valence": round(float(payload.get("valence", 0.0)), 3),
-                "arousal": round(float(payload.get("arousal", 0.0)), 3),
-                "confidence": round(float(payload.get("confidence", 0.8)), 3),
+                "emotion": EMONET_TO_AFFECT.get(label, label),
+                "valence": round(valence, 3),
+                # EmoNet's arousal is -1..1; the rig mapping wants 0..1 intensity.
+                "arousal": round(abs(arousal), 3),
+                "confidence": round(min(1.0, max(abs(valence), abs(arousal))), 3),
                 "source": "emonet",
             }
             out.add_iu(fer, retico_core.UpdateType.ADD)
@@ -125,12 +165,16 @@ def build_emonet_fer(hub, gate):
     """Wire camera frames -> EmoNet -> FerIU -> gate, into the already-running network."""
     if not available():
         raise RuntimeError(
-            "retico-vision / retico-fer not installed (optional, CC BY-NC-ND weights)"
+            "EmoNet path unavailable — needs retico-vision, the vendored retico-fer + "
+            "emonet clones, and dlib (see docs/14)"
         )
-    from retico_fer import FERModule  # type: ignore
+    _ensure_path()
+    from fer_module import FERModule  # type: ignore[import-not-found]
 
     images = WebImageModule(hub)
-    emonet = FERModule()
+    # 8-class model: the extra labels (disgust, anger, contempt) map onto poses
+    # this rig actually has, so the richer set is worth the same compute.
+    emonet = FERModule(emotions_class="extended")
     adapter = EmonetToFerIU()
 
     images.subscribe(emonet)

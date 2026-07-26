@@ -25,3 +25,7 @@ __pycache__/
 
 # Scratch
 *.log
+
+# Vendored FER dependencies (fetched by backend/scripts/install-emonet.sh).
+# Not committed: ~270 MB, and EmoNet's weights are CC BY-NC-ND — research use only.
+backend/vendor/

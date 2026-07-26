@@ -14,6 +14,7 @@ import { useFaceExpression } from "../capture/useFaceExpression";
 import { DevControls } from "./devControls";
 import { PipelinePanel, type PipelineInfo, type DialogueState } from "./PipelinePanel";
 import { ProviderBar } from "./ProviderBar";
+import { CameraPreview } from "./CameraPreview";
 
 // Our own GLB, hosted under frontend/public/assets/.
 const GLB_URL = `${import.meta.env.BASE_URL}assets/face.glb`;
@@ -50,6 +51,9 @@ function ReticoBridge({
   const [asrLoading, setAsrLoading] = useState(false);
   const [asrNotice, setAsrNotice] = useState<string | null>(null);
   const [activeProviders, setActiveProviders] = useState<Record<string, string>>({});
+  // Read inside the capture loop, which must not re-subscribe on every change.
+  const activeProvidersRef = useRef<Record<string, string>>({});
+  activeProvidersRef.current = activeProviders;
   const activityRef = useRef<Record<string, number>>({});
   const rtRef = useRef(rt);
   rtRef.current = rt;
@@ -57,7 +61,10 @@ function ReticoBridge({
   const wsRef = useRef<WsClient | null>(null);
   const mic = useMicCapture(() => wsRef.current);
   const speech = useBrowserSpeech(() => wsRef.current);
-  const vision = useFaceExpression(() => wsRef.current);
+  const vision = useFaceExpression(
+    () => wsRef.current,
+    () => activeProvidersRef.current.fer ?? "browser",
+  );
   const [sayText, setSayText] = useState("Hi there! I can talk now.");
   const [userText, setUserText] = useState("");
 
@@ -256,6 +263,7 @@ function ReticoBridge({
           watching={vision.active}
         />
       )}
+      <CameraPreview stream={vision.stream} log={log} frames={vision.frames} />
     <div className="absolute left-3 top-3 rounded bg-neutral-950/70 px-3 py-2 text-xs text-neutral-100 backdrop-blur">
       <div className="flex items-center gap-2">
         <span className={`inline-block h-2 w-2 rounded-full ${dot}`} />
