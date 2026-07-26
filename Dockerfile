@@ -80,11 +80,15 @@ COPY backend/ ./
 # Bake the frontend in and point the server at it: one container serves the SPA and
 # the WebSocket on one port, which is what Cloud Run expects.
 COPY --from=web /work/vizij-retico/frontend/dist /app/frontend-dist
+# LLM_PROVIDER: LM Studio is a developer-machine convenience — inside a container
+# localhost:1234 is the container itself. Deployments talk to Gemini, so supply
+# GEMINI_API_KEY (Secret Manager). Override at deploy time if you tunnel to something else.
 ENV VIZIJ_RETICO_STATIC=/app/frontend-dist \
     VIZIJ_RETICO_MODE=$PROFILE \
     PYTHONUNBUFFERED=1 \
     PORT=8080 \
-    HF_HOME=/app/models
+    HF_HOME=/app/models \
+    LLM_PROVIDER=gemini
 
 # Pre-download the VAP and Whisper weights into the image. Cloud Run's filesystem is
 # ephemeral, so without this every cold start re-downloads gigabytes from HuggingFace —

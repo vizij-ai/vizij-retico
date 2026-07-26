@@ -34,17 +34,22 @@ Two separate facts, both verified the hard way:
    *"Distribution onnxruntime-gpu==1.27.0 ... doesn't have a source distribution or wheel
    for the current platform."*
 
-So the `full` image must be built on/for amd64 regardless. Two options:
+So the `full` image must be built on/for amd64 regardless. Build it on Cloud Build — the
+repo ships a [`cloudbuild.yaml`](../cloudbuild.yaml) for exactly this:
 
 ```bash
-gcloud builds submit --tag REGION-docker.pkg.dev/PROJECT/REPO/vizij-retico:full \
-  --substitutions _PROFILE=full
+gcloud artifacts repositories create vizij --repository-format=docker --location=us-central1
+gcloud builds submit --config cloudbuild.yaml                              # lite
+gcloud builds submit --config cloudbuild.yaml --substitutions=_PROFILE=full
 ```
 
-Building on Google's amd64 hardware is strongly preferred. Local cross-building works
-(`docker buildx build --platform linux/amd64`) but runs under QEMU emulation: the
-dependency stage alone took ~75 s of downloads plus emulation overhead and produces a
-**6.17 GB** layer before the app, weights or frontend are added.
+It pins a bigger machine and disk (`E2_HIGHCPU_8`, 200 GB) and a 1 hour timeout, because
+the frontend stage builds the whole vizij-web monorepo and `full` additionally installs
+torch and pre-fetches model weights — the Cloud Build defaults are not enough for either.
+
+Local cross-building works (`docker buildx build --platform linux/amd64`) but runs under
+QEMU emulation: the dependency stage alone took ~75 s of downloads plus emulation
+overhead and produced a **6.17 GB** layer before the app, weights or frontend.
 
 Note that `onnxruntime-gpu` (210 MB) is pulled even though Cloud Run has no GPU. It falls
 back to the CPU provider, so it works — it is just dead weight in the image. Pinning
@@ -80,12 +85,36 @@ docker build -t vizij-retico:lite --build-arg VIZIJ_WEB_REF=<commit-sha> .
 
 ## 13.4 Deploying to Cloud Run
 
+Put the key in Secret Manager once:
+
+```bash
+printf %s "$GEMINI_API_KEY" | gcloud secrets create gemini-api-key --data-file=-
+```
+
+Then deploy. `lite` — small, cheap, and the profile to ship first:
+
 ```bash
 gcloud run deploy vizij-retico \
-  --image gcr.io/PROJECT/vizij-retico:lite \
-  --allow-unauthenticated --port 8080 --timeout 3600 \
+  --image us-central1-docker.pkg.dev/PROJECT/vizij/vizij-retico:lite \
+  --region us-central1 --allow-unauthenticated --port 8080 \
+  --timeout 3600 --session-affinity \
   --set-secrets GEMINI_API_KEY=gemini-api-key:latest
 ```
+
+`full` — adds VAP turn-taking, and needs CPU that is not throttled between requests:
+
+```bash
+gcloud run deploy vizij-retico-full \
+  --image us-central1-docker.pkg.dev/PROJECT/vizij/vizij-retico:full \
+  --region us-central1 --allow-unauthenticated --port 8080 \
+  --timeout 3600 --session-affinity \
+  --cpu 4 --memory 8Gi --no-cpu-throttling --min-instances 1 \
+  --set-secrets GEMINI_API_KEY=gemini-api-key:latest
+```
+
+The image already defaults `LLM_PROVIDER=gemini`, so the key is the only LLM configuration
+needed. Add `--set-secrets AWS_ACCESS_KEY_ID=…,AWS_SECRET_ACCESS_KEY=…` to enable Polly
+visemes; without them the UI simply shows Polly as unavailable and uses gTTS.
 
 Things that will bite otherwise:
 

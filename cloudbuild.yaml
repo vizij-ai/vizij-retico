@@ -1,0 +1,44 @@
+# Build the container on Google's amd64 hardware.
+#
+# This is not merely convenient: Cloud Run runs linux/amd64 only, and the `full` profile
+# cannot be built for arm64 at all (retico-maai pulls onnxruntime-gpu, which ships
+# x86_64 wheels only). Building here sidesteps both, and avoids ~6 GB of QEMU-emulated
+# work on a laptop. See docs/13.
+#
+#   gcloud builds submit --config cloudbuild.yaml
+#   gcloud builds submit --config cloudbuild.yaml --substitutions=_PROFILE=full
+#
+# Requires an Artifact Registry repo once per project:
+#   gcloud artifacts repositories create vizij --repository-format=docker --location=$_REGION
+
+substitutions:
+  _PROFILE: lite            # lite | full
+  _REGION: us-central1
+  _REPO: vizij
+  _IMAGE: vizij-retico
+  _VIZIJ_WEB_REF: main      # pin to a commit SHA for reproducible builds
+
+options:
+  # The frontend stage builds the whole vizij-web monorepo, and `full` installs torch and
+  # pre-fetches model weights — the default machine and disk are not enough.
+  machineType: E2_HIGHCPU_8
+  diskSizeGb: 200
+  logging: CLOUD_LOGGING_ONLY
+
+# vizij-web + torch + weight pre-fetch comfortably exceeds the 10 minute default.
+timeout: 3600s
+
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg=PROFILE=${_PROFILE}
+      - --build-arg=VIZIJ_WEB_REF=${_VIZIJ_WEB_REF}
+      - --tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:${_PROFILE}
+      - --tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:${_PROFILE}-$SHORT_SHA
+      - .
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:${_PROFILE}
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:${_PROFILE}-$SHORT_SHA
