@@ -10,6 +10,7 @@ import { WsClient, type ReticoEvent, type WsStatus } from "../net/wsClient";
 import { createReticoDriver } from "../drivers/VizijReticoDriver";
 import { useMicCapture } from "../capture/useMicCapture";
 import { useBrowserSpeech } from "../capture/useBrowserSpeech";
+import { useFaceExpression } from "../capture/useFaceExpression";
 import { DevControls } from "./devControls";
 import { PipelinePanel, type PipelineInfo, type DialogueState } from "./PipelinePanel";
 import { ProviderBar } from "./ProviderBar";
@@ -56,6 +57,7 @@ function ReticoBridge({
   const wsRef = useRef<WsClient | null>(null);
   const mic = useMicCapture(() => wsRef.current);
   const speech = useBrowserSpeech(() => wsRef.current);
+  const vision = useFaceExpression(() => wsRef.current);
   const [sayText, setSayText] = useState("Hi there! I can talk now.");
   const [userText, setUserText] = useState("");
 
@@ -127,6 +129,12 @@ function ReticoBridge({
   useEffect(() => {
     if (speech.partial) activityRef.current["asr.partial"] = Date.now();
   }, [speech.partial]);
+
+  // Blendshape frames are frontend-only until the backend answers with emotion.fer,
+  // so mark activity here to light the FER stage while the camera is running.
+  useEffect(() => {
+    if (vision.frames) activityRef.current["fer.frames"] = Date.now();
+  }, [vision.frames]);
 
   // Connect the WebSocket once on mount, independent of the runtime lifecycle
   // (reconnect handles drops). Decoupling from `ready` avoids the socket being torn
@@ -245,6 +253,7 @@ function ReticoBridge({
           activityRef={activityRef}
           asrSource={asrSource}
           activeProviders={activeProviders}
+          watching={vision.active}
         />
       )}
     <div className="absolute left-3 top-3 rounded bg-neutral-950/70 px-3 py-2 text-xs text-neutral-100 backdrop-blur">
@@ -258,6 +267,14 @@ function ReticoBridge({
         >
           {listening ? "● listening" : "listen"}
         </button>
+        <button
+          className={`rounded px-2 py-0.5 ${vision.active ? "bg-emerald-600" : "bg-neutral-700"} hover:opacity-90 ${vision.loading ? "opacity-50" : ""}`}
+          onClick={() => (vision.active ? vision.stop() : vision.start())}
+          disabled={vision.loading}
+          title="Camera → MediaPipe blendshapes. Only the coefficients are sent; no video leaves the browser."
+        >
+          {vision.loading ? "loading…" : vision.active ? "● watching" : "watch me"}
+        </button>
         <ProviderBar
           registry={pipeline?.providers}
           active={{ ...activeProviders, asr: asrSource ?? activeProviders.asr }}
@@ -267,6 +284,7 @@ function ReticoBridge({
       </div>
       {mic.error && <div className="mt-1 text-red-300">mic: {mic.error}</div>}
       {speech.error && <div className="mt-1 text-red-300">stt: {speech.error}</div>}
+      {vision.error && <div className="mt-1 text-red-300">camera: {vision.error}</div>}
       {asrNotice && <div className="mt-1 text-amber-300">{asrNotice}</div>}
       {useBrowserAsr && listening && !speech.error && (
         <div className="mt-1 opacity-60">

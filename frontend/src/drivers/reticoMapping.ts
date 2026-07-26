@@ -126,7 +126,16 @@ export const EMOTION_ALIASES: Record<string, string> = {
   tired: "sleepy",
   disgusted: "disgust",
 };
-export const EMOTION = { holdAfterSpeechMs: 1200, fadeMs: 500 };
+export const EMOTION = {
+  holdAfterSpeechMs: 1200,
+  fadeMs: 500,
+  /** How long the agent's own affect suppresses mirroring of the user. */
+  agentHoldMs: 4000,
+  /** Mirroring is deliberately faint — full strength reads as mimicry, not empathy. */
+  mirrorScale: 0.45,
+  /** Ignore weak FER readings; a barely-moving face should not drive the rig. */
+  mirrorMinConfidence: 0.25,
+};
 
 // speech.audio → mouth. Two modes, chosen by whether the event carries speech marks:
 //

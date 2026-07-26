@@ -20,6 +20,7 @@ export type PipelineInfo = {
   turn_taking?: string;
   backchannel?: boolean;
   nod?: boolean;
+  fer?: boolean;
   asr_options?: string[];
   llm?: { model?: string; gated_on_turn?: boolean };
   tts?: string;
@@ -52,6 +53,7 @@ export function PipelinePanel({
   activityRef,
   asrSource,
   activeProviders = {},
+  watching = false,
 }: {
   pipeline: PipelineInfo;
   mode: string | null;
@@ -62,6 +64,7 @@ export function PipelinePanel({
   activityRef: MutableRefObject<Record<string, number>>;
   asrSource: string | null;
   activeProviders?: Record<string, string>;
+  watching?: boolean;
 }) {
   // Re-render on a timer so the "active" glow fades as events go stale.
   const [, setTick] = useState(0);
@@ -181,6 +184,27 @@ export function PipelinePanel({
   if (maai) {
     // whisper: depth 2 (under Audio → backend). browser: depth 1 (its own branch).
     rows.push(asrRow);
+  }
+
+  if (p.fer) {
+    const emo = log.find((e) => e.type === "emotion.fer");
+    rows.push({
+      key: "fer",
+      depth: 1,
+      icon: "👁",
+      name: `FER · ${providerLabel("fer") ?? "browser"}`,
+      wired: watching ? "camera on" : "camera off — press 'watch me'",
+      note: "sees the user; only blendshapes leave the browser",
+      activeKeys: ["emotion.fer", "fer.frames"],
+      value: emo
+        ? `${emo.payload.emotion} · valence ${Number(emo.payload.valence ?? 0).toFixed(2)} · arousal ${Number(emo.payload.arousal ?? 0).toFixed(2)}`
+        : watching
+          ? "watching…"
+          : "—",
+    });
+  }
+
+  if (maai) {
     rows.push({
       key: "llm",
       depth: 0,

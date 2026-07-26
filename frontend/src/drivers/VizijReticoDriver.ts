@@ -243,12 +243,29 @@ export function createReticoDriver(
       tiltDeg = wantsTilt ? HEAD.tilt.rollDeg * amt : 0;
       if (!headBusy) applyHead({}, HEAD.tilt.ms);
     };
+    /** The agent's own affect outranks mirroring, and holds while it speaks. */
+    let agentAffectUntil = 0;
+
     const onEmotion = (e: ReticoEvent) => {
       if (fadeTimer !== null) {
         window.clearTimeout(fadeTimer);
         fadeTimer = null;
       }
+      agentAffectUntil = performance.now() + EMOTION.agentHoldMs;
       setEmotion(e.payload.emotion ?? "neutral", Number(e.payload.intensity ?? 0.8));
+    };
+
+    /**
+     * Empathic mirroring: reflect the user's expression back, but faintly, and only when
+     * the agent isn't expressing something of its own. Mirroring at full strength reads
+     * as mimicry rather than empathy, and letting it override the agent's own affect
+     * would mean the face contradicts what it is saying.
+     */
+    const onFer = (e: ReticoEvent) => {
+      if (performance.now() < agentAffectUntil) return;
+      const confidence = Number(e.payload.confidence ?? 0);
+      if (confidence < EMOTION.mirrorMinConfidence) return;
+      setEmotion(e.payload.emotion ?? "neutral", confidence * EMOTION.mirrorScale);
     };
     const scheduleEmotionRelease = () => {
       if (!currentEmotion) return;
@@ -364,8 +381,9 @@ export function createReticoDriver(
         case "gaze.intent":
           return onGaze(e);
         case "emotion.affect":
-        case "emotion.fer":
           return onEmotion(e);
+        case "emotion.fer":
+          return onFer(e);
         case "speech.audio":
           return onSpeech(e);
         case "speech.end":
