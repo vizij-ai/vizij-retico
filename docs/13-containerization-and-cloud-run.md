@@ -83,38 +83,74 @@ shortcut here. Pin it for reproducible builds:
 docker build -t vizij-retico:lite --build-arg VIZIJ_WEB_REF=<commit-sha> .
 ```
 
-## 13.4 Deploying to Cloud Run
+## 13.4 Secrets
 
-Put the key in Secret Manager once:
+Every credential lives in Secret Manager and is mounted as an environment variable at
+run time. Nothing is baked into the image, and nothing is passed on a command line where
+it would land in shell history or a process list.
+
+Set whichever you have in your own shell, then run the setup script — it reads the values
+from the environment, pipes them to `gcloud` over stdin, and never prints them:
 
 ```bash
-printf %s "$GEMINI_API_KEY" | gcloud secrets create gemini-api-key --data-file=-
+export GEMINI_API_KEY=...            # LLM
+export AWS_ACCESS_KEY_ID=...         # Polly TTS (visemes)
+export AWS_SECRET_ACCESS_KEY=...
+./scripts/setup-secrets.sh
 ```
 
-Then deploy. `lite` — small, cheap, and the profile to ship first:
+| secret | env var | enables | required? |
+|---|---|---|---|
+| `gemini-api-key` | `GEMINI_API_KEY` | LLM replies | yes — the image defaults `LLM_PROVIDER=gemini` |
+| `aws-access-key-id` | `AWS_ACCESS_KEY_ID` | Polly visemes | no — falls back to gTTS + amplitude lip-sync |
+| `aws-secret-access-key` | `AWS_SECRET_ACCESS_KEY` | Polly visemes | no |
+| `hf-token` | `HF_TOKEN` | avoids HuggingFace rate limits on `full` | no |
+
+Anything you don't set is skipped rather than erroring. That works because the provider
+registry computes `available` from the environment, so an unmounted secret surfaces as a
+greyed-out option in the UI instead of a runtime failure — the same mechanism that makes
+[`providers.py`](../backend/vizij_retico/providers.py) honest locally.
+
+Two things the script does that are easy to miss by hand:
+
+- **Grants `roles/secretmanager.secretAccessor`** to the Cloud Run runtime service
+  account (`PROJECTNUMBER-compute@…` by default; override with `RUNTIME_SA=`). Cloud Run
+  reads secrets *as that account*, and without the binding the deploy succeeds and the
+  container then fails to start. Grants are per-secret, not project-wide.
+- **Re-runs are safe and repair IAM.** An existing secret gets a new version rather than
+  an error, and the IAM pass covers every secret that exists — so re-running with nothing
+  exported still fixes a missing binding, which is the state you're in when a deploy dies
+  with a permission error.
+
+## 13.5 Deploying to Cloud Run
+
+```bash
+./scripts/deploy.sh                  # lite
+PROFILE=full ./scripts/deploy.sh     # full
+```
+
+It checks which secrets exist and mounts only those, so the same command works whether or
+not you configured Polly, and applies the `full`-only resource flags described below.
+`PROJECT`, `REGION`, `REPO` and `SERVICE` are all overridable by environment variable.
+
+Equivalent by hand, for the record:
 
 ```bash
 gcloud run deploy vizij-retico \
   --image us-central1-docker.pkg.dev/PROJECT/vizij/vizij-retico:lite \
   --region us-central1 --allow-unauthenticated --port 8080 \
   --timeout 3600 --session-affinity \
-  --set-secrets GEMINI_API_KEY=gemini-api-key:latest
+  --set-env-vars AWS_DEFAULT_REGION=us-east-1 \
+  --set-secrets GEMINI_API_KEY=gemini-api-key:latest,\
+AWS_ACCESS_KEY_ID=aws-access-key-id:latest,\
+AWS_SECRET_ACCESS_KEY=aws-secret-access-key:latest
 ```
 
-`full` — adds VAP turn-taking, and needs CPU that is not throttled between requests:
+`full` additionally needs `--cpu 4 --memory 8Gi --no-cpu-throttling --min-instances 1`.
 
-```bash
-gcloud run deploy vizij-retico-full \
-  --image us-central1-docker.pkg.dev/PROJECT/vizij/vizij-retico:full \
-  --region us-central1 --allow-unauthenticated --port 8080 \
-  --timeout 3600 --session-affinity \
-  --cpu 4 --memory 8Gi --no-cpu-throttling --min-instances 1 \
-  --set-secrets GEMINI_API_KEY=gemini-api-key:latest
-```
-
-The image already defaults `LLM_PROVIDER=gemini`, so the key is the only LLM configuration
-needed. Add `--set-secrets AWS_ACCESS_KEY_ID=…,AWS_SECRET_ACCESS_KEY=…` to enable Polly
-visemes; without them the UI simply shows Polly as unavailable and uses gTTS.
+`AWS_DEFAULT_REGION` is load-bearing rather than cosmetic: `polly.py` calls
+`boto3.client("polly")` with no explicit region, and a container has no `~/.aws/config` to
+fall back on, so Polly fails with `NoRegionError` even when the credentials mount fine.
 
 Things that will bite otherwise:
 
@@ -127,9 +163,6 @@ Things that will bite otherwise:
 - **Session affinity** (`--session-affinity`) if you scale past one instance: the audio
   stream and the retico graph are per-instance state, so a client must keep talking to
   the instance that holds its network.
-- **Secrets** (`GEMINI_API_KEY`, `AWS_*`) belong in Secret Manager, mounted as env vars.
-  The provider registry computes availability from the environment, so a missing secret
-  shows up as a greyed-out option in the UI rather than a runtime failure.
 - **LM Studio does not exist in the cloud.** The default LLM provider points at
   `localhost:1234`, which in a container is the container. Set `LLM_PROVIDER=gemini` and
   supply `GEMINI_API_KEY`, or the first turn fails with "no model available".
@@ -145,7 +178,7 @@ Things that will bite otherwise:
 - **Memory.** `full` loads torch, VAP and Whisper — budget several GiB
   (`--memory 8Gi` is a sane starting point) and measure.
 
-## 13.5 FER in a deployed image
+## 13.6 FER in a deployed image
 
 Both FER providers exist, but only one is deployed, and that is deliberate:
 
@@ -163,7 +196,7 @@ builds and simply shows emonet as unavailable, and attempting to select it raise
 error rather than failing obscurely. EmoNet stays a local research option, installed with
 `backend/scripts/install-emonet.sh`.
 
-## 13.6 What is actually verified
+## 13.7 What is actually verified
 
 | | status |
 |---|---|
@@ -176,9 +209,12 @@ error rather than failing obscurely. EmoNet stays a local research option, insta
 | frontend builds with MediaPipe FER | ✅ production build clean |
 | backend degrades without vendored EmoNet | ✅ registry reports unavailable, no crash |
 | weights pre-fetch actually populates the image | ❌ untested (added, never run) |
+| secret/deploy scripts emit the right `gcloud` calls | ✅ exercised against a stubbed `gcloud` |
+| secrets reach `gcloud` via stdin, never argv | ✅ asserted by byte count in the stub |
+| the scripts against a real GCP project | ❌ never run — needs your project |
 | anything on Cloud Run | ❌ never deployed |
 
-## 13.7 Honest limits
+## 13.8 Honest limits
 
 - `--allow-unauthenticated` plus the permissive CORS in the hub makes this a **demo**
   deployment, not a hardened service. Anyone with the URL can drive the face and spend

@@ -10,6 +10,12 @@
 #
 # Requires an Artifact Registry repo once per project:
 #   gcloud artifacts repositories create vizij --repository-format=docker --location=$_REGION
+#
+# Deliberately no `availableSecrets` here: nothing in the build needs a credential.
+# vizij-web is public and the VAP/Whisper weights are ungated, so no token is required to
+# fetch either. Every secret this system uses is a *runtime* secret, mounted from Secret
+# Manager by scripts/deploy.sh — see docs/13 §13.4. Resist adding a --build-arg for a key:
+# build args are recorded in the image history and would leak it to anyone who pulls.
 
 substitutions:
   _PROFILE: lite            # lite | full
