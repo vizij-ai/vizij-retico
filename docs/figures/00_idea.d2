@@ -1,25 +1,48 @@
 ...@_brand.d2
 
-# Fig 0 — the idea in one picture. Deliberately not a wiring diagram: it states the
-# claim (a face driven by *incremental* dialogue reacts during your turn, not after it)
-# and leaves every mechanism to Figs 1-4.
+# Fig 0 — the compact version of Fig 4. Same silhouette, same colour semantics, so the
+# two read as one family: four bands, capture → retico → bridge → face. Every IU type,
+# module name and event name is left to Fig 4.
+#
+# Edges connect band to band, never to a child inside another band — wiring into
+# children makes dagre scatter the groups and the top-to-bottom read is lost.
 
 direction: down
 
 (** -> **)[*].style.stroke: "#555555"
 
-user: You\nspeaking { class: neutral; shape: person }
+cap: Browser · capture {
+  class: group
+  style.font-size: 18
+  direction: right
+  mic: Microphone\n16 kHz PCM { class: neutral }
+  stt: Browser transcript\nWeb Speech { class: emphasis }
+}
 
-signals: Incremental dialogue signals\nretico\n\nWHILE you speak — turn-taking, backchannel, nod\nAS words firm up — transcript revised, ADD / REVOKE / COMMIT\nAS the reply forms — clauses and affect, streamed { class: primary; style.font-size: 18 }
+retico: Incremental dialogue · retico {
+  class: group
+  style.font-size: 18
+  direction: right
+  percept: Turn-taking · backchannel · nod\nVAP, ~10 Hz while you speak { class: primary }
+  asr: ASR\nbrowser or local Whisper { class: primary }
+  dialog: Streaming dialogue\nLLM → affect → TTS { class: primary }
+}
 
-bridge: One protocol\n\nevery signal crosses the wire\nwith its incremental semantics intact { class: secondary; style.font-size: 18 }
+bridge: One WebSocket protocol\nADD / REVOKE / COMMIT preserved end to end { class: secondary; style.font-size: 18 }
 
-face: Expressive face\nVizij · WASM rig in the browser\n\ngaze · blink · head nods\nexpression · lip-sync { class: primary; style.font-size: 18 }
+face: Vizij face · WASM rig in the browser {
+  class: group
+  style.font-size: 18
+  direction: right
+  gaze: gaze + blink { class: neutral }
+  head: head nods { class: neutral }
+  emo: expression { class: neutral }
+  mouth: lip-sync { class: neutral }
+}
 
-user -> signals: 16 kHz audio,\ncontinuously
-signals -> bridge
+cap -> retico: audio, continuously\nplus the browser transcript
+retico -> bridge: every signal, as it firms up
 bridge -> face
+face -> cap: responds DURING your turn,\nnot after it { style: { stroke: "#EC4D00"; stroke-width: 3; font-color: "#EC4D00"; font-size: 18 } }
 
-face -> user: the face responds\nDURING your turn,\nnot after it { style: { stroke: "#EC4D00"; stroke-width: 3; font-color: "#EC4D00"; font-size: 19 } }
-
-swap: Any stage swaps models at runtime — ASR · LLM · TTS, local or cloud { class: highlight; style.font-size: 16; near: bottom-center }
+swap: every stage swaps models at runtime — local or cloud { class: highlight; style.font-size: 15; near: bottom-center }
