@@ -21,13 +21,49 @@ shipping only dialogue would drop the part the paper is actually about.
 switched off — replies fire as soon as a transcript commits. That is a real behavioural
 difference, not just a packaging one, and it is why `full` still matters for the paper.
 
-## 13.2 Build and run
+## 13.2 Architecture: you cannot build this on Apple Silicon and deploy it
+
+Two separate facts, both verified the hard way:
+
+1. **Cloud Run runs `linux/amd64` only.** A native build on an M-series Mac produces
+   `linux/arm64`, which Cloud Run rejects. (The `lite` image built during development was
+   arm64 and would have failed at deploy.)
+2. **The `full` profile cannot be built for arm64 at all.** `retico-maai` depends on
+   `onnxruntime-gpu`, which publishes wheels only for `manylinux_2_27/2_28_x86_64` and
+   `win_amd64`. On arm64 `uv sync --extra full` fails outright:
+   *"Distribution onnxruntime-gpu==1.27.0 ... doesn't have a source distribution or wheel
+   for the current platform."*
+
+So the `full` image must be built on/for amd64 regardless. Two options:
 
 ```bash
-docker build -t vizij-retico:lite .
-docker build -t vizij-retico:full --build-arg PROFILE=full .
-docker run --rm -p 8080:8080 -e PORT=8080 vizij-retico:lite
+gcloud builds submit --tag REGION-docker.pkg.dev/PROJECT/REPO/vizij-retico:full \
+  --substitutions _PROFILE=full
 ```
+
+Building on Google's amd64 hardware is strongly preferred. Local cross-building works
+(`docker buildx build --platform linux/amd64`) but runs under QEMU emulation: the
+dependency stage alone took ~75 s of downloads plus emulation overhead and produces a
+**6.17 GB** layer before the app, weights or frontend are added.
+
+Note that `onnxruntime-gpu` (210 MB) is pulled even though Cloud Run has no GPU. It falls
+back to the CPU provider, so it works — it is just dead weight in the image. Pinning
+`onnxruntime` instead would need an override upstream in retico-maai.
+
+## 13.3 Build and run
+
+```bash
+# local testing only (native arch)
+docker build -t vizij-retico:lite .
+docker run --rm -p 8080:8080 -e PORT=8080 vizij-retico:lite
+
+# deployable images — always amd64 (see 13.2)
+docker buildx build --platform linux/amd64 -t IMAGE:lite --push .
+docker buildx build --platform linux/amd64 --build-arg PROFILE=full -t IMAGE:full --push .
+```
+
+`docker build --build-arg PROFILE=full` on an arm64 host does not work — it fails in the
+dependency stage, by design of the upstream wheels, not of this Dockerfile.
 
 The frontend is baked in and served by the same FastAPI app, so one container serves the
 SPA, the WebSocket (`/ws`) and the TTS routes (`/tts/*`) on one port. `PORT` is honoured
@@ -42,7 +78,7 @@ shortcut here. Pin it for reproducible builds:
 docker build -t vizij-retico:lite --build-arg VIZIJ_WEB_REF=<commit-sha> .
 ```
 
-## 13.3 Deploying to Cloud Run
+## 13.4 Deploying to Cloud Run
 
 ```bash
 gcloud run deploy vizij-retico \
@@ -65,11 +101,35 @@ Things that will bite otherwise:
 - **Secrets** (`GEMINI_API_KEY`, `AWS_*`) belong in Secret Manager, mounted as env vars.
   The provider registry computes availability from the environment, so a missing secret
   shows up as a greyed-out option in the UI rather than a runtime failure.
-- **Cold start** on `full` is dominated by model loading. The image bakes in the Python
-  deps, but HF/VAP weights still download on first use unless you pre-warm them into the
-  image — worth doing before any demo.
+- **LM Studio does not exist in the cloud.** The default LLM provider points at
+  `localhost:1234`, which in a container is the container. Set `LLM_PROVIDER=gemini` and
+  supply `GEMINI_API_KEY`, or the first turn fails with "no model available".
+- **Cold start** on `full` is dominated by model loading. The Dockerfile now pre-fetches
+  the VAP and Whisper weights into `HF_HOME=/app/models` at build time, because Cloud
+  Run's filesystem is ephemeral and without it *every* cold start re-downloads gigabytes.
+  The pre-fetch is best-effort: a download hiccup logs a warning rather than failing the
+  build, so check the build log if first-request latency looks wrong.
+- **Startup probe** is not a problem by construction: `hub.start()` binds the port before
+  the heavy modules are built, so Cloud Run sees a listening socket within seconds even
+  while VAP is still loading. Requests arriving in that window get the SPA and `/health`;
+  the retico graph simply is not producing events yet.
+- **Memory.** `full` loads torch, VAP and Whisper — budget several GiB
+  (`--memory 8Gi` is a sane starting point) and measure.
 
-## 13.4 Honest limits
+## 13.5 What is actually verified
+
+| | status |
+|---|---|
+| `lite` image builds | ✅ 630 MB (arm64, locally) |
+| `lite` serves SPA + `/health` + WebSocket | ✅ verified in a running container |
+| `lite` genuinely omits torch | ✅ verified inside the image |
+| provider registry reports honestly in-container | ✅ whisper shows unavailable in `lite` |
+| `full` dependencies resolve and install (amd64) | ✅ 104 packages, torch 2.13.0 — 6.17 GB deps layer |
+| `full` image builds end to end | ❌ not yet — needs an amd64 builder |
+| weights pre-fetch actually populates the image | ❌ untested (added, never run) |
+| anything on Cloud Run | ❌ never deployed |
+
+## 13.6 Honest limits
 
 - `--allow-unauthenticated` plus the permissive CORS in the hub makes this a **demo**
   deployment, not a hardened service. Anyone with the URL can drive the face and spend

@@ -6,9 +6,16 @@
 #                           Whisper. Multi-GB and CPU-hungry; see docs/13 for the Cloud
 #                           Run flags it needs (it is NOT viable with CPU throttling).
 #
+# Local (native arch — fine for testing, NOT deployable to Cloud Run from Apple Silicon):
 #   docker build -t vizij-retico:lite .
-#   docker build -t vizij-retico:full --build-arg PROFILE=full .
 #   docker run --rm -p 8080:8080 -e PORT=8080 vizij-retico:lite
+#
+# For Cloud Run you MUST produce linux/amd64 — Cloud Run does not run arm64 images, and
+# a native build on Apple Silicon yields arm64 that fails at deploy:
+#   docker buildx build --platform linux/amd64 -t IMAGE --push .
+#   docker buildx build --platform linux/amd64 --build-arg PROFILE=full -t IMAGE --push .
+# or let Google build it on amd64 hardware (avoids slow local emulation):
+#   gcloud builds submit --tag IMAGE
 #
 # syntax=docker/dockerfile:1
 
@@ -76,7 +83,26 @@ COPY --from=web /work/vizij-retico/frontend/dist /app/frontend-dist
 ENV VIZIJ_RETICO_STATIC=/app/frontend-dist \
     VIZIJ_RETICO_MODE=$PROFILE \
     PYTHONUNBUFFERED=1 \
-    PORT=8080
+    PORT=8080 \
+    HF_HOME=/app/models
+
+# Pre-download the VAP and Whisper weights into the image. Cloud Run's filesystem is
+# ephemeral, so without this every cold start re-downloads gigabytes from HuggingFace —
+# slow, and it fails outright if egress is restricted. Best-effort: a download hiccup
+# should not fail the build, it just costs a slower first request.
+RUN if [ "$PROFILE" = "full" ]; then \
+      .venv/bin/python -c "\
+import os; os.environ.setdefault('HF_HOME','/app/models');\
+print('pre-fetching VAP + Whisper weights…');\
+import retico_maai, retico_whisperasr;\
+from retico_maai import TurnTakingModule, BackchannelModule, NodPredictionModule;\
+TurnTakingModule(mode='vap_mc', lang='en', frame_rate=10);\
+BackchannelModule(lang='en', frame_rate=10);\
+NodPredictionModule(lang='en', frame_rate=10);\
+from retico_whisperasr import WhisperASRModule;\
+WhisperASRModule(framerate=16000, language='en', silence_dur=1);\
+print('weights cached')" || echo "WARN: weight pre-fetch failed; first request will download them"; \
+    fi
 
 EXPOSE 8080
 # Run the venv directly rather than via `uv run`, which would try to re-resolve (and so
