@@ -1,0 +1,26 @@
+# What `gcloud builds submit` uploads.
+#
+# Without this file gcloud falls back to .gitignore, which happens to exclude the right
+# things — but only by accident. Being explicit matters most for backend/vendor/: those
+# are the EmoNet clones, ~270 MB of CC BY-NC-ND weights. Deployed images use the browser
+# (MediaPipe, Apache-2.0) FER path, so the server-side model is neither needed nor
+# something to publish in a container image. EmoNet stays a local, research-only option.
+
+.git
+.gitignore
+
+# rebuilt inside the image
+**/node_modules
+**/dist
+**/.venv
+**/__pycache__
+**/*.pyc
+
+# server-side FER: local research use only, never deployed (see docs/13)
+backend/vendor/
+
+# not needed to build or run
+docs/figures/
+*.log
+*.md
+!README.md

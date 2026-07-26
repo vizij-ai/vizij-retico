@@ -145,7 +145,25 @@ Things that will bite otherwise:
 - **Memory.** `full` loads torch, VAP and Whisper — budget several GiB
   (`--memory 8Gi` is a sane starting point) and measure.
 
-## 13.5 What is actually verified
+## 13.5 FER in a deployed image
+
+Both FER providers exist, but only one is deployed, and that is deliberate:
+
+- **browser (MediaPipe, Apache-2.0)** — runs in the page, needs nothing server-side, and
+  only blendshape coefficients cross the wire. This is what a deployed image uses, and it
+  costs the container nothing.
+- **emonet (CC BY-NC-ND)** — vendored under `backend/vendor/`, which
+  [`.gcloudignore`](../.gcloudignore) excludes from the upload. Three reasons: ~270 MB of
+  weights, per-frame dlib + EmoNet inference on Cloud Run CPU (with JPEG frames uploaded
+  from the browser, so it is slower *and* less private), and publishing non-commercial
+  weights inside a public container image is a distribution question worth avoiding.
+
+Nothing breaks in its absence — verified: `available()` returns False, the registry still
+builds and simply shows emonet as unavailable, and attempting to select it raises a clear
+error rather than failing obscurely. EmoNet stays a local research option, installed with
+`backend/scripts/install-emonet.sh`.
+
+## 13.6 What is actually verified
 
 | | status |
 |---|---|
@@ -155,10 +173,12 @@ Things that will bite otherwise:
 | provider registry reports honestly in-container | ✅ whisper shows unavailable in `lite` |
 | `full` dependencies resolve and install (amd64) | ✅ 104 packages, torch 2.13.0 — 6.17 GB deps layer |
 | `full` image builds end to end | ❌ not yet — needs an amd64 builder |
+| frontend builds with MediaPipe FER | ✅ production build clean |
+| backend degrades without vendored EmoNet | ✅ registry reports unavailable, no crash |
 | weights pre-fetch actually populates the image | ❌ untested (added, never run) |
 | anything on Cloud Run | ❌ never deployed |
 
-## 13.6 Honest limits
+## 13.7 Honest limits
 
 - `--allow-unauthenticated` plus the permissive CORS in the hub makes this a **demo**
   deployment, not a hardened service. Anyone with the URL can drive the face and spend
