@@ -1,0 +1,118 @@
+...@_brand.d2
+
+# Fig 4 — the implemented pipeline, browser mic to animated face.
+# Skim path: four stacked bands, top to bottom. Detail: IU types on the retico
+# edges, protocol event names on the WebSocket edge.
+
+# Brand connector colour for every edge; the two highlighted edges below override it.
+(** -> **)[*].style.stroke: "#555555"
+
+# ---------- BROWSER: capture ----------
+cap: Browser · capture {
+  class: group
+  style.font-size: 20
+  direction: right
+
+  mic: Microphone\n16 kHz mono { class: neutral }
+  worklet: AudioWorklet\nfloat32 → int16 PCM { class: neutral }
+  webspeech: Web Speech API\nChrome, transcribes locally { class: emphasis }
+
+  mic -> worklet
+  mic -> webspeech
+}
+
+# ---------- PYTHON: retico incremental network ----------
+retico: retico network · Python {
+  class: group
+  style.font-size: 20
+
+  webin: WebInputModule\nre-chunks to fixed 10 ms frames → AudioIU { class: primary }
+
+  perception: perception · retico-maai {
+    class: group
+    direction: right
+    vap: TurnTaking · VAP\n→ VAPIU { class: primary }
+    bc: Backchannel\n→ BackchannelIU { class: primary }
+    nod: NodPrediction\n→ NodIU { class: primary }
+  }
+
+  asr: ASR · one active at a time {
+    class: group
+    direction: right
+    whisper: WhisperASRModule\nlocal · torch { class: primary }
+    basr: BrowserASRModule\nre-emits browser text { class: primary }
+    gate: AsrGate\nforwards only the active source { class: emphasis }
+    whisper -> gate
+    basr -> gate
+  }
+
+  llm: LLMModule · streamed completion\ngated on agent_should_speak\n→ GeneratedTextIU, one per clause { class: secondary }
+
+  out: {
+    class: group
+    direction: right
+    style.opacity: 0
+    affect: AffectModule\ntag declared by model, else inferred\n→ AffectIU { class: secondary }
+    tts: TTSModule\nordered worker, speaks clause by clause { class: secondary }
+  }
+
+  webin -> perception.vap
+  webin -> perception.bc
+  webin -> perception.nod
+  webin -> asr.whisper: AudioIU
+  asr.gate -> llm: SpeechRecognitionIU · COMMIT
+  perception.vap -> llm: turn state opens the floor gate { style.stroke-dash: 3 }
+  llm -> out.tts: GeneratedTextIU · ADD
+  llm -> out.affect: GeneratedTextIU · ADD
+}
+
+# ---------- THE BRIDGE ----------
+bridge: VizijWebSocketModule\nretico consuming module · FastAPI + websockets\nclassifiers keyed by IU type — one JSON envelope\nthat preserves ADD / REVOKE / COMMIT { class: secondary; style.font-size: 18 }
+
+# ---------- BROWSER: the face ----------
+face: Browser · Vizij face {
+  class: group
+  style.font-size: 20
+
+  driver: VizijReticoDriver\nregisterInputDriver · editable IU→animation mapping { class: secondary }
+
+  behaviours: {
+    class: group
+    direction: right
+    style.opacity: 0
+    gaze: gaze + idle blink\nresolveFaceControls { class: neutral }
+    head: head nod / shake / tilt\ncompositing transform { class: neutral }
+    emo: emotion pose blend\nfear = surprise + concern { class: neutral }
+    mouth: lip-sync\nPolly visemes, else amplitude jaw { class: neutral }
+  }
+
+  runtime: Arora runtime → Quori rig\n@vizij/runtime-react over Rust/WASM · 1356 input channels { class: primary }
+
+  driver -> behaviours.gaze
+  driver -> behaviours.head
+  driver -> behaviours.emo
+  driver -> behaviours.mouth
+  behaviours.gaze -> runtime
+  behaviours.head -> runtime
+  behaviours.emo -> runtime
+  behaviours.mouth -> runtime
+}
+
+# ---------- swappable providers (legend) ----------
+prov: swappable at runtime\n\nLLM  ·  LM Studio (local)  or  Gemini (cloud)\nASR  ·  Web Speech (browser)  or  Whisper (local)\nTTS  ·  gTTS  or  AWS Polly (speech marks)\n\navailability is computed from the environment, so an\nunconfigured provider is shown disabled, never broken { class: highlight; style.font-size: 15 }
+
+# ---------- cross-boundary wiring ----------
+cap.worklet -> retico.webin: PCM frames over WebSocket
+cap.webspeech -> retico.asr.basr: final transcript — text only,\nthe audio stream is not used for ASR here { style.stroke-dash: 3 }
+
+retico.perception.vap -> bridge: turn.state
+retico.perception.bc -> bridge: backchannel.cue
+retico.perception.nod -> bridge: nod.cue
+retico.asr.gate -> bridge: asr.text
+retico.out.affect -> bridge: AffectIU
+retico.out.tts -> bridge: speech.audio + visemes
+
+bridge -> face.driver: "JSON events over one WebSocket\nturn.state · backchannel.cue · nod.cue · asr.text\ndialogue.state · emotion.affect · speech.audio / end" { style: { stroke: "#EC4D00"; stroke-width: 3 } }
+
+prov -> retico.llm: { style: { stroke: "#F78600"; stroke-width: 2; stroke-dash: 4 } }
+prov -> retico.out.tts: { style: { stroke: "#F78600"; stroke-width: 2; stroke-dash: 4 } }
