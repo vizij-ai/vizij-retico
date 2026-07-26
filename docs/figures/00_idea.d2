@@ -1,0 +1,25 @@
+...@_brand.d2
+
+# Fig 0 — the idea in one picture. Deliberately not a wiring diagram: it states the
+# claim (a face driven by *incremental* dialogue reacts during your turn, not after it)
+# and leaves every mechanism to Figs 1-4.
+
+direction: down
+
+(** -> **)[*].style.stroke: "#555555"
+
+user: You\nspeaking { class: neutral; shape: person }
+
+signals: Incremental dialogue signals\nretico\n\nWHILE you speak — turn-taking, backchannel, nod\nAS words firm up — transcript revised, ADD / REVOKE / COMMIT\nAS the reply forms — clauses and affect, streamed { class: primary; style.font-size: 18 }
+
+bridge: One protocol\n\nevery signal crosses the wire\nwith its incremental semantics intact { class: secondary; style.font-size: 18 }
+
+face: Expressive face\nVizij · WASM rig in the browser\n\ngaze · blink · head nods\nexpression · lip-sync { class: primary; style.font-size: 18 }
+
+user -> signals: 16 kHz audio,\ncontinuously
+signals -> bridge
+bridge -> face
+
+face -> user: the face responds\nDURING your turn,\nnot after it { style: { stroke: "#EC4D00"; stroke-width: 3; font-color: "#EC4D00"; font-size: 19 } }
+
+swap: Any stage swaps models at runtime — ASR · LLM · TTS, local or cloud { class: highlight; style.font-size: 16; near: bottom-center }

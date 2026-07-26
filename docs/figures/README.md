@@ -2,6 +2,10 @@
 
 Semio-branded [d2](https://d2lang.com) sources + rendered SVGs.
 
+- `00_idea.d2` — **the value proposition in one picture** (teaser). Five elements, one
+  loop, no wiring: incremental signals → one protocol → expressive face → back to the
+  user, whose point is the claim that the face responds *during* your turn. Every
+  mechanism is deferred to the figures below.
 - `01_architecture.d2` — system architecture, as designed (Fig 1)
 - `02_mapping.d2` — IU → WebSocket event → Vizij channel mapping (Fig 2)
 - `03_visemes.d2` — client-side vs AWS Polly viseme paths (Fig 3)
