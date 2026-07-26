@@ -36,6 +36,8 @@ class WebSocketHub:
         self.video_in: "queue.Queue[bytes]" = queue.Queue()
         # Browser Web Speech API transcripts (drained by BrowserASRModule): {text, final}.
         self.asr_in: "queue.Queue[dict]" = queue.Queue()
+        # Browser MediaPipe blendshapes (drained by BrowserFERModule): {blendshapes}.
+        self.fer_in: "queue.Queue[dict]" = queue.Queue()
 
         # Audio format most recently advertised by a client (browser capture).
         self.audio_rate = 16000
@@ -62,6 +64,8 @@ class WebSocketHub:
         # Advertised to clients so the browser only runs Web Speech STT when the
         # backend is actually consuming it ("browser" | "whisper").
         self.asr_source: str = "browser"
+        # Which FER source is active ("browser" | "emonet").
+        self.fer_source: str = "browser"
         # Which provider each pipeline stage is currently using.
         self.active_providers: dict[str, str] = {}
         self.tts_provider: str = "gtts"
@@ -155,6 +159,11 @@ class WebSocketHub:
             b64 = payload.get("data")
             if b64:
                 self.audio_in.put(base64.b64decode(b64))
+        elif typ == "input.fer":
+            # Blendshapes only — the camera image never leaves the browser on this path.
+            shapes = payload.get("blendshapes")
+            if shapes:
+                self.fer_in.put({"blendshapes": shapes})
         elif typ == "input.video":
             b64 = payload.get("data")
             if b64:

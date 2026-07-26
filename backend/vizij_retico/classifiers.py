@@ -48,7 +48,18 @@ class MaaiClassifiers:
             "NodIU": self.nod,
             "SpeechRecognitionIU": self.asr_text,
             "AffectIU": self.affect,
+            "FerIU": self.fer,
         }
+
+    # -- FER (the user's expression) -----------------------------------------
+    def fer(self, iu, ut, framer: EventFramer) -> Optional[dict[str, Any]]:
+        """FerIU (what the *user* looks like) -> emotion.fer."""
+        if ut != retico_core.UpdateType.ADD:
+            return None
+        payload = getattr(iu, "payload", None) or {}
+        if not payload.get("emotion"):
+            return None
+        return framer.frame("emotion.fer", dict(payload), iu=iu_provenance(iu, ut))
 
     # -- affect ---------------------------------------------------------------
     def affect(self, iu, ut, framer: EventFramer) -> Optional[dict[str, Any]]:

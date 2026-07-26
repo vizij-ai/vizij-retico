@@ -26,6 +26,10 @@ class Config:
     #    (fully local/offline). Audio is streamed to the backend for turn-taking either way.
     asr_source: str = os.environ.get("ASR_SOURCE", "browser")
 
+    # Which FER source perceives the user: "browser" (MediaPipe blendshapes, Apache-2.0,
+    # nothing leaves the page) or "emonet" (retico-fer, server-side, CC BY-NC-ND).
+    fer_source: str = os.environ.get("FER_SOURCE", "browser")
+
     # Which LLM provider is selected at startup ("lmstudio" | "gemini"); switchable at
     # runtime from the UI. See providers.py for the registry.
     llm_provider: str = os.environ.get("LLM_PROVIDER", "lmstudio")

@@ -131,7 +131,40 @@ def asr_providers() -> dict[str, Provider]:
     }
 
 
-REGISTRY = {"asr": asr_providers, "llm": llm_providers, "tts": tts_providers}
+def fer_providers() -> dict[str, Provider]:
+    """Who perceives the user's expression.
+
+    The licences differ and that matters for deployment: MediaPipe is Apache-2.0 and runs
+    in the page, EmoNet is CC BY-NC-ND (research only, non-commercial).
+    """
+    from . import emonet_fer
+
+    emonet_ok = emonet_fer.available()
+    return {
+        "browser": Provider(
+            id="browser",
+            label="Browser (MediaPipe)",
+            note="52 blendshapes in-page; no video leaves the browser",
+        ),
+        "emonet": Provider(
+            id="emonet",
+            label="EmoNet (server)",
+            note=(
+                "retico-fer, valence/arousal — research use only (CC BY-NC-ND)"
+                if emonet_ok
+                else "not installed — retico-fer/retico-vision, CC BY-NC-ND"
+            ),
+            available=emonet_ok,
+        ),
+    }
+
+
+REGISTRY = {
+    "asr": asr_providers,
+    "fer": fer_providers,
+    "llm": llm_providers,
+    "tts": tts_providers,
+}
 
 
 def get(kind: str, provider_id: str) -> Optional[Provider]:

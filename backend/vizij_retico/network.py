@@ -78,6 +78,14 @@ def _build_lite(hub: WebSocketHub, framer: EventFramer):
     llm.subscribe(affect)
     affect.subscribe(bridge)
 
+    # FER needs no torch, so the small profile perceives the user too.
+    from .fer import BrowserFERModule, FerGate
+
+    fer_gate = FerGate(get_source=lambda: hub.fer_source)
+    browser_fer = BrowserFERModule(hub)
+    browser_fer.subscribe(fer_gate)
+    fer_gate.subscribe(bridge)
+
     hub.simulate_turn_handler = lambda: None  # no floor gate to open
     hub.emit_cue_handler = lambda cue, payload: hub.broadcast(framer.frame(cue, payload))
 
@@ -102,7 +110,7 @@ def _build_lite(hub: WebSocketHub, framer: EventFramer):
         llm.set_provider(llm_spec.id, llm_spec.settings)
         hub.active_providers["llm"] = llm_spec.id
 
-    return browser_asr, [browser_asr, llm, tts, affect, bridge]
+    return browser_asr, [browser_asr, browser_fer, fer_gate, llm, tts, affect, bridge]
 
 
 def _build_maai(hub: WebSocketHub, framer: EventFramer):
@@ -163,6 +171,21 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
     llm.subscribe(affect)
     affect.subscribe(bridge)
 
+
+    # --- FER: perceiving the user -------------------------------------------
+    from .fer import BrowserFERModule, FerGate, FerSwitcher
+
+    def _fer_status(state: str, detail: str) -> None:
+        hub.broadcast(
+            framer.frame("fer.source", {"state": state, "source": hub.fer_source, "detail": detail})
+        )
+
+    fer_gate = FerGate(get_source=lambda: hub.fer_source)
+    browser_fer = BrowserFERModule(hub)
+    browser_fer.subscribe(fer_gate)
+    fer_gate.subscribe(bridge)
+    fer_switcher = FerSwitcher(hub, fer_gate, on_status=_fer_status)
+
     def _asr_status(state: str, detail: str) -> None:
         hub.broadcast(
             framer.frame(
@@ -191,6 +214,9 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
         if kind == "asr":
             switcher.set_source(provider_id)  # emits its own asr.source events
             return
+        if kind == "fer":
+            fer_switcher.set_source(provider_id)
+            return
         if kind == "llm":
             llm.set_provider(provider_id, spec.settings)
         elif kind == "tts":
@@ -217,7 +243,10 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
     if CONFIG.asr_source == "whisper":
         switcher.set_source("whisper")  # brings Whisper up in the background
 
-    return web_in, [web_in, turn, bc, nod, browser_asr, gate, llm, tts, affect, bridge]
+    return web_in, [
+        web_in, turn, bc, nod, browser_asr, gate, browser_fer, fer_gate,
+        llm, tts, affect, bridge,
+    ]
 
 
 def start(mode: str = "fake") -> RunningNetwork:
@@ -230,8 +259,10 @@ def start(mode: str = "fake") -> RunningNetwork:
     # or failed model load can't leave the graph with no ASR at all).
     hub.asr_source = "browser"
     hub.tts_provider = CONFIG.tts_provider
+    hub.fer_source = CONFIG.fer_source
     hub.active_providers = {
         "asr": hub.asr_source,
+        "fer": hub.fer_source,
         "llm": CONFIG.llm_provider,
         "tts": CONFIG.tts_provider,
     }
@@ -242,6 +273,7 @@ def start(mode: str = "fake") -> RunningNetwork:
             "capture": "browser mic · 16 kHz PCM",
             "turn_taking": "retico-maai VAP",
             "backchannel": True,
+            "fer": True,
             "nod": True,
             "asr_options": ["browser", "whisper"],  # switchable at runtime
             "llm": {"model": CONFIG.llm_model or "auto-detect", "gated_on_turn": True},
