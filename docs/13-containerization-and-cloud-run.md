@@ -310,7 +310,10 @@ error rather than failing obscurely. EmoNet stays a local research option, insta
 | `GEMINI_API_KEY` mounts and authenticates | ✅ 200 from Gemini `/models`, `gemini-2.5-flash` listed |
 | incremental ASR IUs stream over the cloud WebSocket | ✅ ADD-per-word then COMMIT, first frame 63 ms |
 | gTTS synthesis in the cloud | ✅ 22 KB valid MP3 in 0.29 s via `control:say` |
-| an actual LLM turn in the cloud | ❌ blocked on Gemini billing, not on this system — see below |
+| an actual LLM turn in the cloud | ✅ via Vertex — full turn in 1.17 s |
+| the face renders in a deployed browser | ✅ WASM + rig load, no console errors |
+| end-to-end from the deployed UI | ✅ heard → excited affect → speech → face animates |
+| the AI Studio (`gemini`) path in the cloud | ❌ 429, prepayment credits — see below |
 
 ## 13.8 Honest limits
 
