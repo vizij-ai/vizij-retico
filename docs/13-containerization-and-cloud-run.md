@@ -101,6 +101,10 @@ Every credential lives in Secret Manager and is mounted as an environment variab
 run time. Nothing is baked into the image, and nothing is passed on a command line where
 it would land in shell history or a process list.
 
+The shortest version: **a default deploy needs no secrets at all.** The LLM goes through
+Vertex on the runtime service account's own credentials, and TTS falls back to gTTS. The
+secrets below buy you the AI Studio LLM path and Polly visemes.
+
 Set whichever you have in your own shell, then run the setup script — it reads the values
 from the environment, pipes them to `gcloud` over stdin, and never prints them:
 
@@ -113,7 +117,7 @@ export AWS_SECRET_ACCESS_KEY=...
 
 | secret | env var | enables | required? |
 |---|---|---|---|
-| `gemini-api-key` | `GEMINI_API_KEY` | LLM replies | yes — the image defaults `LLM_PROVIDER=gemini` |
+| `gemini-api-key` | `GEMINI_API_KEY` | the AI Studio LLM path | no — `deploy.sh` defaults to Vertex, which uses no key (below) |
 | `aws-access-key-id` | `AWS_ACCESS_KEY_ID` | Polly visemes | no — falls back to gTTS + amplitude lip-sync |
 | `aws-secret-access-key` | `AWS_SECRET_ACCESS_KEY` | Polly visemes | no |
 | `hf-token` | `HF_TOKEN` | avoids HuggingFace rate limits on `full` | no |
@@ -148,6 +152,41 @@ is exactly 39 bytes.
 Note that `gcloud services api-keys list` returns **empty and exits 0** when
 `apikeys.googleapis.com` is disabled, rather than erroring. An empty list is therefore not
 evidence that a project has no keys until you've enabled that API.
+
+### Or skip the key entirely: Gemini via Vertex AI
+
+`deploy.sh` defaults to the **vertex** LLM provider, which needs no secret at all. Vertex
+serves the same Gemini models over the same OpenAI-compatible protocol, but:
+
+| | `gemini` (AI Studio) | `vertex` |
+|---|---|---|
+| Auth | static `GEMINI_API_KEY` | ADC — the runtime service account |
+| Billing | AI Studio prepayment credits | the project's Cloud billing account |
+| Secret to manage | yes | **none** |
+
+That makes it the better default for a deployed demo: there is no key to mount, rotate or
+leak, and spend lands on the same invoice as Cloud Run and Cloud Build. The runtime
+service account needs `roles/aiplatform.user`:
+
+```bash
+gcloud projects add-iam-policy-binding PROJECT \
+  --member="serviceAccount:PROJECTNUMBER-compute@developer.gserviceaccount.com" \
+  --role=roles/aiplatform.user
+```
+
+Locally, `gcloud auth application-default login` supplies the same credentials. Two
+things to know:
+
+- **Tokens expire in about an hour**, so they are minted per request rather than captured
+  when the provider is selected. A long-running instance would otherwise start returning
+  401 mid-session, which reads as a permissions bug rather than an expiry.
+- **Set `VERTEX_PROJECT` explicitly.** ADC resolves whatever project your local `gcloud
+  config` points at, which is frequently not the one you are deploying to.
+- **Gemini 2.5 thinks by default, and it is expensive here**: measured 575 reasoning
+  tokens to produce a 20-token sentence, and with a small `max_tokens` the reply is
+  truncated to nothing at all. The provider sets
+  `thinking_config.thinking_budget = 0`. Note `reasoning_effort: "none"` is *rejected* by
+  this endpoint — it accepts only `high`/`low`/`medium`/`minimal`.
 
 ### Gemini quota is separate from Cloud billing
 
