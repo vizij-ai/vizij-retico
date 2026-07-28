@@ -77,7 +77,8 @@ def _build_lite(hub: WebSocketHub, framer: EventFramer):
     from .google_asr import GoogleASRModule
     from .web_input import WebInputModule
 
-    gate = AsrGate(get_source=lambda: hub.asr_source)
+    gate = AsrGate(get_source=lambda: hub.asr_source,
+                    speaking_until=lambda: hub.speaking_until)
     browser_asr = BrowserASRModule(hub)
     browser_asr.subscribe(gate)
 
@@ -112,6 +113,13 @@ def _build_lite(hub: WebSocketHub, framer: EventFramer):
             llm.set_provider(provider_id, spec.settings)
         elif kind == "tts":
             hub.tts_provider = provider_id
+            # A voice belongs to one provider, so carrying the old selection across a
+            # switch would leave e.g. "Joanna" selected while gTTS is speaking.
+            providers.set_active_tts(provider_id)
+            hub.voice = providers.default_voice(provider_id)
+            hub.active_providers["voice"] = hub.voice
+        elif kind == "voice":
+            hub.voice = provider_id
         elif kind == "asr":
             # Both sources stay live; the gate decides which reaches the graph.
             hub.asr_source = provider_id
@@ -189,7 +197,8 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
 
     from .google_asr import GoogleASRModule
 
-    gate = AsrGate(get_source=lambda: hub.asr_source)
+    gate = AsrGate(get_source=lambda: hub.asr_source,
+                    speaking_until=lambda: hub.speaking_until)
     browser_asr = BrowserASRModule(hub)  # head producer, fed by the browser via the hub
     browser_asr.subscribe(gate)
     # Google STT reads the same streamed audio the turn-taking models do.
@@ -257,6 +266,11 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
             llm.set_provider(provider_id, spec.settings)
         elif kind == "tts":
             hub.tts_provider = provider_id
+            providers.set_active_tts(provider_id)
+            hub.voice = providers.default_voice(provider_id)
+            hub.active_providers["voice"] = hub.voice
+        elif kind == "voice":
+            hub.voice = provider_id
         elif kind == "turn":
             llm.set_gating(provider_id == "vap")
         else:
@@ -305,12 +319,15 @@ def start(mode: str = "fake") -> RunningNetwork:
         if hub.asr_source != wanted:
             print(f"[asr] {wanted} unavailable, starting on browser")
     hub.tts_provider = CONFIG.tts_provider
+    providers.set_active_tts(CONFIG.tts_provider)
+    hub.voice = providers.default_voice(CONFIG.tts_provider)
     hub.fer_source = CONFIG.fer_source
     # "turn" reflects the graph actually built: only the maai profile has VAP modules,
     # so lite starts (and stays) ungated regardless of what is installed.
     hub.active_providers = {
         "asr": hub.asr_source,
         "turn": "vap" if mode == "maai" else "off",
+        "voice": providers.default_voice(CONFIG.tts_provider),
         "fer": hub.fer_source,
         "llm": CONFIG.llm_provider,
         "tts": CONFIG.tts_provider,

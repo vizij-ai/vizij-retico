@@ -151,7 +151,10 @@ export function PipelinePanel({
     depth: maai ? 2 : 0,
     icon: "🔄",
     name: "Turn-taking (VAP)",
-    wired: maai ? p.turn_taking ?? "retico-maai" : "synthetic (FakeTurnModule)",
+    // Not "synthetic (FakeTurnModule)" when !maai — that was simply false, and alarming:
+    // it claimed a generator was producing turn events when the lite graph builds no
+    // such module (FakeTurnModule exists only in mode="fake", which is never deployed).
+    wired: maai ? p.turn_taking ?? "retico-maai" : "not in this build — replies are ungated",
     activeKeys: ["turn.state"],
     value: turn
       ? `${turn.payload.state} · shift ${Number(turn.payload.p_shift ?? 0).toFixed(2)}`

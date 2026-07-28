@@ -17,6 +17,7 @@ reaches the dialogue graph no matter how many ASRs are running.
 from __future__ import annotations
 
 import threading
+import time
 from typing import Any, Callable, Optional
 
 import retico_core
@@ -52,18 +53,44 @@ class AsrGate(retico_core.AbstractModule):
     def output_iu():
         return SpeechRecognitionIU
 
-    def __init__(self, get_source: Callable[[], str], **kwargs) -> None:
+    def __init__(
+        self,
+        get_source: Callable[[], str],
+        speaking_until: Optional[Callable[[], float]] = None,
+        **kwargs,
+    ) -> None:
         super().__init__(**kwargs)
         self.get_source = get_source
+        # Returns the monotonic time until which the agent is still speaking.
+        self.speaking_until = speaking_until or (lambda: 0.0)
+        self._suppressed = 0
 
     def process_update(self, update_message):
         active = self.get_source()
+        # The microphone hears the agent's own voice coming out of the speakers, and the
+        # server-side ASRs transcribe it happily — the agent then answers itself, which
+        # can sustain indefinitely. Browser echo cancellation reduces this but does not
+        # remove it, especially on external speakers. Drop transcripts produced while we
+        # are talking. (Cost: no barge-in. Interrupting the agent mid-sentence will not
+        # register until it finishes — the right trade until there is real AEC, because
+        # the failure it prevents is a runaway loop.)
+        muted = time.monotonic() < self.speaking_until()
         out = retico_core.UpdateMessage()
         forwarded = 0
         for iu, ut in update_message:
-            # Simulated turns (debug harness) always pass, whichever source is active.
-            if not getattr(iu, "simulated", False) and source_of(iu) != active:
+            # Simulated turns (debug harness) always pass, whichever source is active
+            # and even while speaking — the harness is how the pipeline gets tested.
+            if getattr(iu, "simulated", False):
+                out.add_iu(iu, ut)
+                forwarded += 1
+                continue
+            if source_of(iu) != active:
                 continue  # the inactive ASR is still running; drop its output
+            if muted:
+                self._suppressed += 1
+                if self._suppressed % 25 == 1:
+                    print(f"[asr] suppressed while speaking (n={self._suppressed})")
+                continue
             out.add_iu(iu, ut)
             forwarded += 1
         return out if forwarded else None
@@ -91,7 +118,11 @@ class AsrSwitcher:
         return self._whisper is not None
 
     def set_source(self, source: str) -> None:
-        source = "whisper" if source == "whisper" else "browser"
+        # Pass any known source through. This used to collapse to whisper-or-browser,
+        # which silently rerouted a "google" selection to the browser recognizer — the
+        # UI showed Google selected while Web Speech was actually running.
+        if source not in ("whisper", "google", "browser"):
+            source = "browser"
         if source == "whisper" and not self.whisper_ready:
             # Load off-thread: constructing WhisperASRModule pulls in a Whisper model.
             threading.Thread(target=self._start_whisper, daemon=True).start()

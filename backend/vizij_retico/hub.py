@@ -41,6 +41,11 @@ class WebSocketHub:
 
         # Audio format most recently advertised by a client (browser capture).
         self.audio_rate = 16000
+        # Monotonic deadline until which the agent is still speaking; the ASR gate
+        # drops transcripts before it so the agent does not answer its own voice.
+        self.speaking_until = 0.0
+        # Voice id for the active TTS provider (a Polly voice name, or a gTTS accent).
+        self.voice = ""
         self.audio_width = 2  # bytes/sample (s16le)
         self.audio_channels = 1
 
@@ -92,7 +97,7 @@ class WebSocketHub:
         from . import polly
         from .config import CONFIG
 
-        polly.register_routes(app, CONFIG.polly_voice)
+        polly.register_routes(app, lambda: self.voice or CONFIG.polly_voice)
 
         @app.get("/health")
         async def health() -> dict[str, Any]:

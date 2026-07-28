@@ -237,6 +237,61 @@ def fer_providers() -> dict[str, Provider]:
     }
 
 
+# Which voices each TTS provider offers. Deliberately a curated shortlist rather than
+# Polly's full catalogue: this is a character's voice, and a 100-entry dropdown is worse
+# for that than a handful that actually suit an embodied face. All neural-capable.
+VOICES: dict[str, list[tuple[str, str]]] = {
+    "polly": [
+        ("Joanna", "Joanna · US, warm"),
+        ("Matthew", "Matthew · US, warm"),
+        ("Ruth", "Ruth · US, expressive"),
+        ("Stephen", "Stephen · US, expressive"),
+        ("Amy", "Amy · UK"),
+        ("Brian", "Brian · UK"),
+        ("Olivia", "Olivia · AU"),
+        ("Aria", "Aria · NZ"),
+    ],
+    # gTTS has no voices, only locales — the accent is the only thing you can pick.
+    "gtts": [
+        ("en", "English · US"),
+        ("en-uk", "English · UK"),
+        ("en-au", "English · AU"),
+        ("en-in", "English · India"),
+    ],
+}
+
+
+# Which TTS the voice list should describe. A module-level setting rather than a
+# parameter because the registry factories take no arguments, and rather than reaching
+# into the hub because providers.py must not depend on it.
+_ACTIVE_TTS = CONFIG.tts_provider
+
+
+def set_active_tts(provider_id: str) -> None:
+    """Point the voice list at a different TTS. Called when the TTS provider changes."""
+    global _ACTIVE_TTS
+    _ACTIVE_TTS = provider_id
+
+
+def default_voice(provider_id: str) -> str:
+    entries = VOICES.get(provider_id) or VOICES["gtts"]
+    return entries[0][0]
+
+
+def voice_providers() -> dict[str, Provider]:
+    """Voices for whichever TTS provider is active.
+
+    Keyed off the active TTS rather than listing everything, because a Polly voice name
+    means nothing to gTTS and vice versa — offering both at once would let you pick a
+    combination that cannot work.
+    """
+    entries = VOICES.get(_ACTIVE_TTS) or VOICES["gtts"]
+    return {
+        vid: Provider(id=vid, label=label, note=f"{_ACTIVE_TTS} voice")
+        for vid, label in entries
+    }
+
+
 def turn_providers() -> dict[str, Provider]:
     """Whether the agent waits for the floor before replying.
 
@@ -269,6 +324,7 @@ def turn_providers() -> dict[str, Provider]:
 REGISTRY = {
     "asr": asr_providers,
     "turn": turn_providers,
+    "voice": voice_providers,
     "fer": fer_providers,
     "llm": llm_providers,
     "tts": tts_providers,

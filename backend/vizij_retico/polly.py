@@ -93,8 +93,13 @@ def synthesize(text: str, voice: str) -> Speech:
     return Speech(audio=synthesize_audio(text, voice), marks=synthesize_marks(text, voice))
 
 
-def register_routes(app, default_voice: str) -> None:
-    """Expose the `@vizij/speech-react` TTS contract on the shared FastAPI app."""
+def register_routes(app, default_voice) -> None:
+    """Expose the `@vizij/speech-react` TTS contract on the shared FastAPI app.
+
+    `default_voice` may be a callable so the fallback tracks the voice currently selected
+    in the UI; a value captured at registration would pin these routes to whatever was
+    configured at startup.
+    """
     from fastapi import HTTPException
     from fastapi.responses import Response
 
@@ -103,7 +108,8 @@ def register_routes(app, default_voice: str) -> None:
         text = (payload.get("text") or "").strip()
         if not text:
             raise HTTPException(status_code=400, detail="text is required")
-        return text, payload.get("voice") or default_voice
+        fallback = default_voice() if callable(default_voice) else default_voice
+        return text, payload.get("voice") or fallback
 
     @app.post("/tts/get-visemes")
     async def get_visemes(payload: dict) -> dict[str, Any]:

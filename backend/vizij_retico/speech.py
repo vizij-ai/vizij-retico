@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import io
+import time
 from typing import Callable
 
 from gtts import gTTS
@@ -16,10 +17,29 @@ from gtts import gTTS
 from .events import EventFramer
 from .hub import WebSocketHub
 
+# Rough speaking rate, used only to estimate how long an utterance occupies the floor
+# when the TTS provider returns no speech marks. Matches the LLM's cooldown heuristic.
+CHARS_PER_SECOND = 12.0
+# Extra margin after the estimate: playback starts slightly after dispatch, and a room
+# has reverb. Too short and the tail of our own sentence is transcribed as the user's.
+SPEECH_TAIL_SECONDS = 0.8
+
+
+# gTTS picks an accent from a lang/tld pair, not a voice name. The voice registry uses
+# "en-uk"-style ids so one selector can serve both providers; unpack them here.
+_GTTS_ACCENTS = {"en": ("en", "com"), "en-uk": ("en", "co.uk"),
+                 "en-au": ("en", "com.au"), "en-in": ("en", "co.in")}
+
+
+def _gtts_lang(voice: str) -> str:
+    """A Polly voice name selected before switching to gTTS is meaningless here."""
+    return voice if voice in _GTTS_ACCENTS else "en"
+
 
 def synthesize_mp3(text: str, lang: str = "en") -> bytes:
+    code, tld = _GTTS_ACCENTS.get(lang, ("en", "com"))
     buf = io.BytesIO()
-    gTTS(text=text, lang=lang).write_to_fp(buf)
+    gTTS(text=text, lang=code, tld=tld).write_to_fp(buf)
     return buf.getvalue()
 
 
@@ -45,7 +65,7 @@ def make_say_handler(hub: WebSocketHub, framer: EventFramer) -> Callable[[str], 
                 from .config import CONFIG
 
                 try:
-                    speech = polly.synthesize(text, CONFIG.polly_voice)
+                    speech = polly.synthesize(text, getattr(hub, "voice", None) or CONFIG.polly_voice)
                     mp3 = speech.audio
                     visemes = speech.marks.get("visemes", [])
                 except Exception as exc:
@@ -54,7 +74,7 @@ def make_say_handler(hub: WebSocketHub, framer: EventFramer) -> Callable[[str], 
                     print(f"[tts] polly failed ({exc}); falling back to gTTS")
                     mp3 = synthesize_mp3(text)
             else:
-                mp3 = synthesize_mp3(text)
+                mp3 = synthesize_mp3(text, _gtts_lang(getattr(hub, "voice", "") or "en"))
         except Exception as exc:  # network / gTTS failure
             hub.broadcast(
                 framer.frame("speech.error", {"utteranceId": utterance_id, "error": str(exc)})
@@ -75,5 +95,15 @@ def make_say_handler(hub: WebSocketHub, framer: EventFramer) -> Callable[[str], 
             )
         )
         hub.broadcast(framer.frame("speech.end", {"utteranceId": utterance_id}))
+        # Mark the floor as ours until the utterance has finished playing, so the ASR
+        # gate can drop what the mic hears in the meantime — which is mostly us. Note
+        # `speech.end` above means "dispatched", not "finished playing", so it cannot be
+        # used for this; the duration has to be estimated. Visemes give the real length
+        # when Polly produced them; otherwise fall back to a speaking-rate estimate.
+        if visemes:
+            spoken = visemes[-1].get("time", 0) / 1000.0
+        else:
+            spoken = len(text) / CHARS_PER_SECOND
+        hub.speaking_until = time.monotonic() + spoken + SPEECH_TAIL_SECONDS
 
     return say
