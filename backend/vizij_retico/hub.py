@@ -78,6 +78,23 @@ class WebSocketHub:
         # the debug pipeline preview can show what's wired.
         self.pipeline: dict[str, Any] = {}
 
+    def _pipeline_snapshot(self) -> dict:
+        """The pipeline descriptor with a freshly computed provider registry.
+
+        `self.pipeline` is built once at startup, so a snapshot taken then goes stale the
+        moment anything is switched — a reconnecting client would see the options and
+        active ids from boot. Recomputing here means every client gets current state
+        regardless of which graph is running or what has been switched since.
+        """
+        pipeline = dict(self.pipeline or {})
+        try:
+            from . import providers
+
+            pipeline["providers"] = providers.describe(self.active_providers)
+        except Exception:  # never let the registry stop a client connecting
+            pass
+        return pipeline
+
     # ---- server plumbing -------------------------------------------------
 
     def build_app(self) -> FastAPI:
@@ -120,7 +137,7 @@ class WebSocketHub:
                         "protocol": 1,
                         "mode": self.mode,
                         "asr_source": self.asr_source,
-                        "pipeline": self.pipeline,
+                        "pipeline": self._pipeline_snapshot(),
                     }
                 )
             )
