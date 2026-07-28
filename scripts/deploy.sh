@@ -63,7 +63,10 @@ args=(
   # Load-bearing, not cosmetic: polly.py calls boto3.client("polly") with no explicit
   # region, and a container has no ~/.aws/config to fall back on. Without this, Polly
   # fails with NoRegionError even when the credentials mount correctly.
-  --set-env-vars "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}"
+  # Vertex by default: it bills to this project's ordinary Cloud billing account and
+  # authenticates with the runtime service account's ADC, so the deployment needs no LLM
+  # key at all. Override with LLM_PROVIDER=gemini to use an AI Studio key instead.
+  --set-env-vars "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1},LLM_PROVIDER=${LLM_PROVIDER:-vertex},VERTEX_PROJECT=${PROJECT},VERTEX_LOCATION=${VERTEX_LOCATION:-us-central1}"
 )
 
 if [ "$PROFILE" = "full" ]; then

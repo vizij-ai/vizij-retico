@@ -105,7 +105,7 @@ def llm_providers() -> dict[str, Provider]:
         ),
         "gemini": Provider(
             id="gemini",
-            label="Gemini (cloud)",
+            label="Gemini (AI Studio)",
             note="needs GEMINI_API_KEY" if not gemini_key else CONFIG.gemini_model,
             requires_key=True,
             available=bool(gemini_key),
@@ -116,7 +116,52 @@ def llm_providers() -> dict[str, Provider]:
                 "system_suffix": "",
             },
         ),
+        "vertex": _vertex_provider(),
     }
+
+
+def _vertex_provider() -> Provider:
+    """Gemini via Vertex AI: same models and protocol, different billing and auth.
+
+    Worth having as a separate entry rather than a flag on `gemini`, because the two
+    differ in the ways the UI needs to show: Vertex bills to the project's Cloud billing
+    account instead of AI Studio prepayment credits, and authenticates with ADC — so a
+    Cloud Run deployment needs no API key secret at all.
+    """
+    from . import gcp_auth
+
+    ok, detail = gcp_auth.available()
+    project = CONFIG.vertex_project or (gcp_auth.project() if ok else "")
+    if not project:
+        ok = False
+    location = CONFIG.vertex_location
+    base_url = (
+        f"https://{location}-aiplatform.googleapis.com/v1beta1"
+        f"/projects/{project}/locations/{location}/endpoints/openapi"
+    )
+    return Provider(
+        id="vertex",
+        label="Gemini (Vertex AI)",
+        note=(
+            f"{CONFIG.vertex_model} · {project} · Cloud billing"
+            if ok
+            else f"no credentials — {detail}"
+        ),
+        requires_key=False,  # ADC, not a key
+        available=ok,
+        settings={
+            "base_url": base_url,
+            "model": CONFIG.vertex_model,
+            "api_key": "",
+            "auth": "adc",
+            "system_suffix": "",
+            # Gemini 2.5 thinks by default: measured 575 reasoning tokens to produce a
+            # 20-token sentence, which is latency this loop cannot spend. Note that
+            # reasoning_effort:"none" is rejected by this endpoint (only
+            # high/low/medium/minimal), so the budget has to be zeroed explicitly.
+            "extra_body": {"google": {"thinking_config": {"thinking_budget": 0}}},
+        },
+    )
 
 
 def tts_providers() -> dict[str, Provider]:

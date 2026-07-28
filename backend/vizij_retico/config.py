@@ -46,6 +46,15 @@ class Config:
     gemini_model: str = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
     gemini_api_key: str = os.environ.get("GEMINI_API_KEY", "")
 
+    # Vertex AI: the same Gemini models and the same OpenAI protocol, but billed to the
+    # project's ordinary Cloud billing account rather than AI Studio prepayment credits,
+    # and authenticated with ADC instead of an API key — so a Cloud Run deployment needs
+    # no secret at all. Project defaults to whatever ADC resolves (see gcp_auth.py).
+    vertex_project: str = os.environ.get("VERTEX_PROJECT", "")
+    vertex_location: str = os.environ.get("VERTEX_LOCATION", "us-central1")
+    # The OpenAI-compat surface wants the publisher prefix.
+    vertex_model: str = os.environ.get("VERTEX_MODEL", "google/gemini-2.5-flash")
+
     # Base persona. Provider-specific suffixes (e.g. Qwen3's "/no_think") are appended
     # by the provider spec, so a cloud model never sees a local model's control tokens.
     # The affect instruction is appended in network.py from affect.AFFECT_INSTRUCTION, so

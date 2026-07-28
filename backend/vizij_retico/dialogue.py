@@ -103,6 +103,7 @@ def chat_stream(
     timeout: float = 60.0,
     max_tokens: int = 300,
     api_key: str = "",
+    extra_body: Optional[dict] = None,
 ):
     """Yield reply text incrementally from a streamed chat completion.
 
@@ -118,6 +119,7 @@ def chat_stream(
             "temperature": 0.7,
             "max_tokens": max_tokens,
             "stream": True,
+            **(extra_body or {}),
         },
         timeout=timeout,
         stream=True,
@@ -149,6 +151,7 @@ def chat(
     timeout: float = 60.0,
     max_tokens: int = 300,
     api_key: str = "",
+    extra_body: Optional[dict] = None,
 ) -> str:
     r = requests.post(
         _join(base_url, "chat/completions"),
@@ -158,6 +161,7 @@ def chat(
             "messages": messages,
             "temperature": 0.7,
             "max_tokens": max_tokens,
+            **(extra_body or {}),
         },
         timeout=timeout,
     )
@@ -214,6 +218,12 @@ class LLMModule(retico_core.AbstractModule):
         self.provider_id = ""
         self._last_out = None  # previous outgoing IU, for the incremental chain
         self.api_key = ""
+        # "key" = static bearer from settings; "adc" = short-lived Google token minted per
+        # request (Vertex). See _bearer().
+        self.auth_mode = "key"
+        # Provider-specific request fields merged into the chat body (Vertex uses this to
+        # switch off thinking).
+        self.extra_body: dict = {}
         # Appended to the system prompt for providers that need control tokens (Qwen3's
         # "/no_think"); kept out of the base persona so cloud models never see them.
         self.system_suffix = ""
@@ -256,10 +266,29 @@ class LLMModule(retico_core.AbstractModule):
             self.base_url = str(settings.get("base_url", self.base_url)).rstrip("/")
             self.configured_model = str(settings.get("model", "") or "")
             self.api_key = str(settings.get("api_key", "") or "")
+            self.auth_mode = str(settings.get("auth", "key") or "key")
+            self.extra_body = dict(settings.get("extra_body") or {})
             self.system_suffix = str(settings.get("system_suffix", "") or "")
             self._model = None
             self._history = []
         print(f"[llm] provider -> {provider_id} ({self.base_url}, model={self.configured_model or 'auto'})")
+
+    def _bearer(self) -> str:
+        """The Authorization value for this request.
+
+        Vertex tokens expire in about an hour, so they are minted per call rather than
+        captured at switch time — otherwise a long-running instance starts 401ing mid
+        session, which looks like a permissions bug rather than an expiry.
+        """
+        if self.auth_mode != "adc":
+            return self.api_key
+        from . import gcp_auth
+
+        try:
+            return gcp_auth.token()
+        except Exception as exc:
+            print(f"[llm] ADC token error: {exc}")
+            return ""
 
     def _system_prompt(self) -> str:
         return f"{self.system}{self.system_suffix}" if self.system else ""
@@ -371,7 +400,11 @@ class LLMModule(retico_core.AbstractModule):
         looking_for_tag = True
         self._affect = None  # each turn gets its own reading
         for piece in chat_stream(
-            self.base_url, self._model or "", messages, api_key=self.api_key
+            self.base_url,
+            self._model or "",
+            messages,
+            api_key=self._bearer(),
+            extra_body=self.extra_body,
         ):
             buffer += piece
             if looking_for_tag:
@@ -405,7 +438,7 @@ class LLMModule(retico_core.AbstractModule):
             if self.status is not None:
                 self.status("thinking", text)
             if self._model is None:
-                self._model = resolve_model(self.base_url, self.configured_model, self.api_key)
+                self._model = resolve_model(self.base_url, self.configured_model, self._bearer())
             if not self._model:
                 print(f"[llm] no model available at {self.base_url} (provider={self.provider_id})")
                 return
@@ -418,7 +451,12 @@ class LLMModule(retico_core.AbstractModule):
                 # Streaming produced nothing usable (small "thinking" models sometimes
                 # do this). Fall back to one non-streamed attempt with a bigger budget.
                 reply = chat(
-                    self.base_url, self._model, messages, max_tokens=512, api_key=self.api_key
+                    self.base_url,
+                    self._model,
+                    messages,
+                    max_tokens=512,
+                    api_key=self._bearer(),
+                    extra_body=self.extra_body,
                 )
                 if reply:
                     self._emit_clause(reply, first=True)
