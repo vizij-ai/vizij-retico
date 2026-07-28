@@ -45,18 +45,30 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
-      # Federated credentials carry no quota project of their own, and GCS refuses the
-      # request without one — surfacing as "forbidden from accessing the bucket
-      # [PROJECT_cloudbuild] ... serviceusage.services.use", which reads as a missing role
-      # on the deployer. It isn't: the same call succeeds under direct impersonation.
-      - name: Set quota project
-        run: gcloud config set billing/quota_project "$PROJECT"
+      # Build here rather than on Cloud Build. GitHub's runners are already linux/amd64 —
+      # the architecture Cloud Run requires and the reason cloudbuild.yaml exists at all
+      # (see docs/13.2) — so there is nothing to gain from shipping the source elsewhere
+      # to compile it. It also avoids the GCS source-staging bucket entirely: under
+      # Workload Identity, `gcloud builds submit` fails with "forbidden from accessing the
+      # bucket [PROJECT_cloudbuild] ... serviceusage.services.use" even though the deployer
+      # holds serviceUsageConsumer and the identical call succeeds under direct
+      # impersonation. Not uploading a source tarball sidesteps the whole interaction.
+      #
+      # cloudbuild.yaml stays for the `full` profile, which needs more disk and RAM than a
+      # standard runner has.
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
 
-      - name: Build
+      - name: Build and push
         run: |
-          gcloud builds submit --config cloudbuild.yaml \
-            --project "$PROJECT" \
-            --substitutions=_PROFILE=${PROFILE},_REGION=${REGION}
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/vizij/vizij-retico"
+          docker build \
+            --build-arg PROFILE="${PROFILE}" \
+            --tag "${IMAGE}:${PROFILE}" \
+            --tag "${IMAGE}:${PROFILE}-${GITHUB_SHA}" \
+            .
+          docker push "${IMAGE}:${PROFILE}"
+          docker push "${IMAGE}:${PROFILE}-${GITHUB_SHA}"
 
       - name: Deploy
         run: PROJECT="$PROJECT" REGION="$REGION" PROFILE="$PROFILE" ./scripts/deploy.sh
