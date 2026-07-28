@@ -270,7 +270,25 @@ The deployer holds six roles, deliberately not `editor`:
 | `serviceusage.serviceUsageConsumer` | make API calls against the project |
 
 plus `iam.serviceAccountUser` on the *runtime* service account — Cloud Run deploys run as
-that account, and without `actAs` the deploy is rejected.
+that account, and without `actAs` the deploy is rejected. Note the deployer needs
+`storage.admin` on the `PROJECT_cloudbuild` bucket specifically: `storage.objectAdmin`
+covers objects but not `storage.buckets.get`, and `gcloud builds submit` needs both.
+Granting it on the bucket rather than the project keeps the scope tight.
+
+**IAM propagation will make you debug the wrong thing.** This bit three separate times in
+one afternoon: the first `builds submit` after enabling APIs, and two CI runs after
+granting the deployer its roles. The error is `PERMISSION_DENIED`/`forbidden` naming a
+permission you *have just granted*, so it reads as a wrong-role problem and invites you to
+grant something broader. It isn't; it resolves in about a minute. Confirm before changing
+any policy, by checking as the service account itself rather than re-reading the binding:
+
+```bash
+gcloud storage ls gs://PROJECT_cloudbuild \
+  --impersonate-service-account=github-deployer@PROJECT.iam.gserviceaccount.com
+```
+
+(That needs `roles/iam.serviceAccountTokenCreator` on the deployer for your own account —
+worth granting temporarily for diagnosis, and removing afterwards.)
 
 One-time provisioning, all non-interactive (unlike hooking Cloud Build up to GitHub,
 which needs an OAuth app install in the console):

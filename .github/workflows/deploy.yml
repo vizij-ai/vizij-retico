@@ -45,8 +45,13 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
-      # Pin the image to the commit so a deploy is traceable and rollback is a redeploy
-      # of an older tag rather than a rebuild.
+      # Federated credentials carry no quota project of their own, and GCS refuses the
+      # request without one — surfacing as "forbidden from accessing the bucket
+      # [PROJECT_cloudbuild] ... serviceusage.services.use", which reads as a missing role
+      # on the deployer. It isn't: the same call succeeds under direct impersonation.
+      - name: Set quota project
+        run: gcloud config set billing/quota_project "$PROJECT"
+
       - name: Build
         run: |
           gcloud builds submit --config cloudbuild.yaml \
