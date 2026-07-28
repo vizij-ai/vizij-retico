@@ -12,10 +12,11 @@ shipping only dialogue would drop the part the paper is actually about.
 |---|---|---|
 | ASR | Google STT (default) or browser | + local Whisper |
 | Turn-taking | none | retico-maai VAP + backchannel + nod |
+| Server-side FER | none (browser MediaPipe) | + EmoNet valence/arousal |
 | LLM / TTS | same in both (Vertex / LM Studio, gTTS / Polly) | same |
 | torch | no | yes |
-| Image | small | multi-GB |
-| Cloud Run | comfortable | needs CPU always-on; measure before committing |
+| Image | 630 MB | multi-GB (14m43s to build) |
+| Cloud Run | scales to zero | `--no-cpu-throttling`, still scales to zero |
 
 The split is **build-time only**: torch, retico-maai and retico-whisperasr are multi-GB
 packages that have to be installed into the image, and Cloud Run's filesystem is
@@ -345,7 +346,11 @@ error rather than failing obscurely. EmoNet stays a local research option, insta
 | `lite` genuinely omits torch | ✅ verified inside the image |
 | provider registry reports honestly in-container | ✅ whisper shows unavailable in `lite` |
 | `full` dependencies resolve and install (amd64) | ✅ 104 packages, torch 2.13.0 — 6.17 GB deps layer |
-| `full` image builds end to end | ❌ not yet — but Cloud Build is now proven, so this is just a matter of running it |
+| `full` image builds end to end | ✅ 14m43s on Cloud Build (torch + weights + dlib + EmoNet) |
+| `full` deploys and serves on Cloud Run | ✅ `vizij-retico-full`, /health 200 |
+| every capability available at once | ✅ whisper + VAP + EmoNet + Vertex all report available |
+| floor-gate toggle reaches the module | ✅ `[llm] floor gate off/on` in the deployed logs |
+| floor gate changes *observable* behaviour | ❌ needs a live mic — see below |
 | frontend builds with MediaPipe FER | ✅ production build clean |
 | backend degrades without vendored EmoNet | ✅ registry reports unavailable, no crash |
 | weights pre-fetch actually populates the image | ❌ untested (added, never run) |
@@ -362,8 +367,9 @@ error rather than failing obscurely. EmoNet stays a local research option, insta
 | the face renders in a deployed browser | ✅ WASM + rig load, no console errors |
 | end-to-end from the deployed UI | ✅ heard → excited affect → speech → face animates |
 | Google STT module, real speech in | ✅ 56 ADD / 50 REVOKE / 1 COMMIT, transcript exact |
-| Google STT in the deployed container | ❌ not yet — needs a live mic through the UI |
-| CI deploy on merge to main | ❌ not yet — first run is this commit |
+| Google STT in the deployed container | ✅ active; no idle OutOfRange after the fix |
+| Google STT on a live human voice | ❌ still needs a real mic through the UI |
+| CI deploy on merge to main | ✅ green: build, deploy, /health smoke test |
 
 ## 13.9 Honest limits
 
