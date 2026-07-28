@@ -123,7 +123,48 @@ registry computes `available` from the environment, so an unmounted secret surfa
 greyed-out option in the UI instead of a runtime failure — the same mechanism that makes
 [`providers.py`](../backend/vizij_retico/providers.py) honest locally.
 
-Two things the script does that are easy to miss by hand:
+### Minting the Gemini key without ever handling it
+
+If you don't already have a key, `gcloud` can create one and hand it to Secret Manager
+directly, so the value never appears on a terminal or in shell history:
+
+```bash
+gcloud services enable generativelanguage.googleapis.com apikeys.googleapis.com
+gcloud services api-keys create --display-name="vizij-retico Gemini" \
+  --api-target=service=generativelanguage.googleapis.com
+KEY_UID=...   # the uid from `gcloud services api-keys list`
+gcloud services api-keys get-key-string "$KEY_UID" --format='value(keyString)' \
+  | tr -d '\n' \
+  | gcloud secrets create gemini-api-key --replication-policy=automatic --data-file=-
+```
+
+`--api-target` restricts the key to the Gemini API, so a leak can't be spent on anything
+else. **The `tr -d '\n'` is required**, not tidiness: `--format='value(...)'` appends a
+newline, and a secret with a trailing newline produces a malformed `Authorization` header
+that fails in a way pointing nowhere near the real cause. Verify with
+`gcloud secrets versions access latest --secret=gemini-api-key | wc -c` — a Google API key
+is exactly 39 bytes.
+
+Note that `gcloud services api-keys list` returns **empty and exits 0** when
+`apikeys.googleapis.com` is disabled, rather than erroring. An empty list is therefore not
+evidence that a project has no keys until you've enabled that API.
+
+### Gemini quota is separate from Cloud billing
+
+A key can authenticate perfectly and still fail every generation call. Cloud Run and Cloud
+Build bill through the project's Cloud billing account; the Gemini API bills through AI
+Studio prepayment credits, which are **separate**. Symptom:
+
+```
+GET  /v1beta/openai/models            -> 200
+POST /v1beta/openai/chat/completions  -> 429 RESOURCE_EXHAUSTED
+     "Your prepayment credits are depleted."
+```
+
+A 429 rather than 401/403 is the tell that the key is fine and the quota is not. Top up at
+[ai.studio/projects](https://ai.studio/projects) for the same project the key belongs to.
+
+Two things the setup script does that are easy to miss by hand:
 
 - **Grants `roles/secretmanager.secretAccessor`** to the Cloud Run runtime service
   account (`PROJECTNUMBER-compute@…` by default; override with `RUNTIME_SA=`). Cloud Run
@@ -227,7 +268,10 @@ error rather than failing obscurely. EmoNet stays a local research option, insta
 | `lite` deploys and serves on Cloud Run | ✅ `/health` 200 in 143 ms, SPA + 1.67 MB bundle |
 | WebSocket `/ws` over TLS on Cloud Run | ✅ `hello` received with full registry |
 | registry honest in a *deployed* container | ✅ whisper/emonet/gemini/polly all correctly unavailable |
-| an actual dialogue turn in the cloud | ❌ needs `GEMINI_API_KEY` in Secret Manager |
+| `GEMINI_API_KEY` mounts and authenticates | ✅ 200 from Gemini `/models`, `gemini-2.5-flash` listed |
+| incremental ASR IUs stream over the cloud WebSocket | ✅ ADD-per-word then COMMIT, first frame 63 ms |
+| gTTS synthesis in the cloud | ✅ 22 KB valid MP3 in 0.29 s via `control:say` |
+| an actual LLM turn in the cloud | ❌ blocked on Gemini billing, not on this system — see below |
 
 ## 13.8 Honest limits
 
