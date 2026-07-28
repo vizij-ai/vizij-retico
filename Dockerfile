@@ -49,9 +49,12 @@ RUN npm run build
 # portaudio, and none of that toolchain needs to ship in the final image.
 FROM python:3.11-slim AS deps
 ARG PROFILE=lite
+# cmake is for dlib (EmoNet's face detector), which ships no wheels for 3.11+ and builds
+# from source. It is only needed by the `full` profile, but installing it unconditionally
+# keeps this layer shared between both builds.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      build-essential portaudio19-dev git ca-certificates \
+      build-essential cmake portaudio19-dev git ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app/backend
@@ -81,8 +84,13 @@ FROM python:3.11-slim AS runtime
 ARG PROFILE=lite
 
 # ffmpeg: pydub (the ASR resampler) shells out to it. libportaudio2: pyaudio's runtime.
+# libgomp1 + libglib2.0-0: dlib and opencv are compiled/installed into the venv in the
+# deps stage, and the venv is copied here — so their shared-library dependencies have to
+# exist in this image too, or `import dlib`/`import cv2` fails at first use rather than
+# at build time. (headless opencv is why libGL is *not* needed; see install-emonet.sh.)
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates ffmpeg libportaudio2 \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates ffmpeg libportaudio2 libgomp1 libglib2.0-0 \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/backend
