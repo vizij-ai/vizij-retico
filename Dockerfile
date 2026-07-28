@@ -63,6 +63,19 @@ RUN if [ "$PROFILE" = "full" ]; then \
       uv sync --no-install-project; \
     fi
 
+# Server-side FER (retico-fer + EmoNet), `full` only. Cloned from upstream at build time
+# rather than vendored: the ~270 MB of CC BY-NC-ND weights then never enter this repo,
+# the Cloud Build source upload, or the `lite` image. Set EMONET=0 to skip.
+#
+# dlib has no wheels for recent Pythons, so this compiles it (~3 min) — which is why it
+# lives in the deps stage next to the rest of the toolchain rather than in runtime.
+ARG EMONET=1
+COPY backend/scripts/install-emonet.sh /tmp/install-emonet.sh
+RUN if [ "$PROFILE" = "full" ] && [ "$EMONET" = "1" ]; then \
+      mkdir -p /app/backend/scripts && cp /tmp/install-emonet.sh /app/backend/scripts/ \
+      && cd /app/backend && VENDOR_ONLY=1 bash scripts/install-emonet.sh; \
+    fi
+
 # ----------------------------------------------------------------- backend ----
 FROM python:3.11-slim AS runtime
 ARG PROFILE=lite
@@ -76,6 +89,10 @@ WORKDIR /app/backend
 # Same path as the deps stage, so the venv's absolute paths stay valid.
 COPY --from=deps /app/backend/.venv ./.venv
 COPY backend/ ./
+# After the source copy, not before: `COPY backend/ ./` would otherwise overwrite the
+# directory. .dockerignore/.gcloudignore keep backend/vendor out of the build context, so
+# this is the only path by which EmoNet reaches the image, and only for `full`.
+COPY --from=deps /app/backend/vendo[r] ./vendor
 
 # Bake the frontend in and point the server at it: one container serves the SPA and
 # the WebSocket on one port, which is what Cloud Run expects.

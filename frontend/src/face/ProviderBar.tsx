@@ -7,7 +7,13 @@ import type { ProviderRegistry } from "./PipelinePanel";
  * environment — so a provider that needs a key it doesn't have is shown but disabled,
  * with the reason in the tooltip, rather than being silently missing or failing on use.
  */
-const KIND_LABEL: Record<string, string> = { asr: "asr", llm: "llm", tts: "tts" };
+const KIND_LABEL: Record<string, string> = {
+  asr: "asr",
+  fer: "fer",
+  llm: "llm",
+  tts: "tts",
+  turn: "floor",
+};
 
 export function ProviderBar({
   registry,

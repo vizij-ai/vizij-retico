@@ -121,6 +121,8 @@ def _build_lite(hub: WebSocketHub, framer: EventFramer):
                     {"state": "active", "source": provider_id, "detail": spec.label},
                 )
             )
+        elif kind == "turn":
+            llm.set_gating(provider_id == "vap")
         else:
             return
         hub.active_providers[kind] = provider_id
@@ -255,6 +257,8 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
             llm.set_provider(provider_id, spec.settings)
         elif kind == "tts":
             hub.tts_provider = provider_id
+        elif kind == "turn":
+            llm.set_gating(provider_id == "vap")
         else:
             return
         hub.active_providers[kind] = provider_id
@@ -302,8 +306,11 @@ def start(mode: str = "fake") -> RunningNetwork:
             print(f"[asr] {wanted} unavailable, starting on browser")
     hub.tts_provider = CONFIG.tts_provider
     hub.fer_source = CONFIG.fer_source
+    # "turn" reflects the graph actually built: only the maai profile has VAP modules,
+    # so lite starts (and stays) ungated regardless of what is installed.
     hub.active_providers = {
         "asr": hub.asr_source,
+        "turn": "vap" if mode == "maai" else "off",
         "fer": hub.fer_source,
         "llm": CONFIG.llm_provider,
         "tts": CONFIG.tts_provider,

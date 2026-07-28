@@ -237,8 +237,38 @@ def fer_providers() -> dict[str, Provider]:
     }
 
 
+def turn_providers() -> dict[str, Provider]:
+    """Whether the agent waits for the floor before replying.
+
+    This used to be decided at build time — it was the real behavioural difference
+    between the `lite` and `full` images. It is a boolean, so it belongs here: with the
+    VAP models present you can flip between "replies the moment you stop talking" and
+    "waits until the turn model hands over the floor" mid-conversation, which is the
+    clearest way to show what the turn-taking model actually buys.
+    """
+    vap_ok = importlib.util.find_spec("retico_maai") is not None
+    return {
+        "vap": Provider(
+            id="vap",
+            label="VAP turn-taking",
+            note=(
+                "wait for retico-maai to yield the floor"
+                if vap_ok
+                else "not installed (this is the 'lite' build)"
+            ),
+            available=vap_ok,
+        ),
+        "off": Provider(
+            id="off",
+            label="Reply immediately",
+            note="answer as soon as a transcript commits",
+        ),
+    }
+
+
 REGISTRY = {
     "asr": asr_providers,
+    "turn": turn_providers,
     "fer": fer_providers,
     "llm": llm_providers,
     "tts": tts_providers,

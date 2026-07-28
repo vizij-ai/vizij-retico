@@ -17,9 +17,25 @@ shipping only dialogue would drop the part the paper is actually about.
 | Image | small | multi-GB |
 | Cloud Run | comfortable | needs CPU always-on; measure before committing |
 
-`lite` has no turn-taking model, so the LLM's floor gate has nothing to wait for and is
-switched off — replies fire as soon as a transcript commits. That is a real behavioural
-difference, not just a packaging one, and it is why `full` still matters for the paper.
+The split is **build-time only**: torch, retico-maai and retico-whisperasr are multi-GB
+packages that have to be installed into the image, and Cloud Run's filesystem is
+ephemeral, so there is no adding them on demand. Everything `lite` does is a strict
+subset of `full`.
+
+What used to be the interesting difference — whether the LLM waits for the floor before
+replying — is now a **runtime toggle** (`floor:` in the provider bar), because it was only
+ever a boolean. In a `full` image you can switch mid-conversation between:
+
+- **VAP turn-taking** — wait until retico-maai says the floor is the agent's.
+- **Reply immediately** — answer the moment a transcript commits.
+
+That is worth more as a switch than as two builds: the contrast *is* the argument for
+turn-taking, and being able to flip it live demonstrates it far better than describing it.
+In a `lite` image the VAP option shows as unavailable, the same way Whisper does.
+
+So the remaining reasons to ship `lite` at all are narrow, and honest: a much smaller
+image (faster cold start) and cheaper per-second cost while someone is connected. With
+`--min-instances 0` both cost nothing idle.
 
 ## 13.2 Architecture: you cannot build this on Apple Silicon and deploy it
 

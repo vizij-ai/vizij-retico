@@ -312,6 +312,26 @@ class LLMModule(retico_core.AbstractModule):
                     self._enqueue(text)
         return None
 
+    def set_gating(self, enabled: bool) -> None:
+        """Turn the floor gate on or off at runtime.
+
+        The difference this makes is the point of the turn-taking model, so it belongs in
+        the UI rather than baked into a build: gated, the agent waits until VAP says the
+        floor is its own; ungated, it replies the moment a transcript commits.
+
+        Disabling releases anything already waiting. Without that the switch appears not
+        to work — the queued turn would sit there until max_wait expired, which looks like
+        a stuck toggle rather than a bounded wait.
+        """
+        with self._lock:
+            self.gate_on_turn = enabled
+            release = (not enabled) and self._pending is not None
+            if release:
+                self._released = True
+        print(f"[llm] floor gate {'on' if enabled else 'off'}")
+        if release:
+            self._try()
+
     def notify_turn(self, state: str) -> None:
         """Called by the turn-taking classifier on each turn.state. Opens the gate once
         the floor is the agent's; then tries to reply."""

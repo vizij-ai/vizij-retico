@@ -69,9 +69,19 @@ args=(
 )
 
 if [ "$PROFILE" = "full" ]; then
-  # The retico network runs continuously on background threads, so CPU must stay
-  # allocated between requests or VAP inference stalls.
-  args+=(--cpu 4 --memory 8Gi --no-cpu-throttling --min-instances 1)
+  # --no-cpu-throttling is required, not optional: the retico network runs continuously
+  # on background threads, and Cloud Run's default only allocates CPU while a request is
+  # being handled, which stalls VAP inference between requests.
+  #
+  # --min-instances 0 is what keeps it free when idle, and it works here because of how
+  # this app is shaped: the WebSocket *is* a long-running request, so an instance stays
+  # alive with full CPU for as long as someone is connected, then scales to zero. Billing
+  # is per instance-second, so nobody connected means no cost. The price is cold start —
+  # the first connection waits for the container plus the VAP/Whisper weights, which is
+  # why the Dockerfile bakes them in. Set MIN_INSTANCES=1 to trade money for that wait
+  # before a live demo.
+  args+=(--cpu 4 --memory 8Gi --no-cpu-throttling
+         --min-instances "${MIN_INSTANCES:-0}")
 fi
 
 if [ -n "$mounts" ]; then

@@ -102,16 +102,36 @@ class GoogleASRModule(retico_core.AbstractModule):
 
     # --- recognition -------------------------------------------------------
 
-    def _requests(self, speech):
-        """Yield audio chunks until the stream should roll over."""
+    def _await_audio(self) -> Optional[bytes]:
+        """Block until the mic is actually streaming, and return the first chunk.
+
+        Opening a recognition stream before there is audio to put in it is what makes
+        Google kill it with OutOfRange after its idle timeout. Waiting here means a stream
+        exists only while someone is talking to us.
+        """
+        while self._running:
+            try:
+                return self._audio.get(timeout=_CHUNK_TIMEOUT)
+            except queue.Empty:
+                continue
+        return None
+
+    def _requests(self, speech, first: bytes):
+        """Yield audio chunks until the stream should roll over or the mic goes away."""
         import time
 
         started = time.time()
+        yield speech.StreamingRecognizeRequest(audio_content=first)
         while self._running and (time.time() - started) < _STREAM_LIMIT_SECONDS:
             try:
                 chunk = self._audio.get(timeout=_CHUNK_TIMEOUT)
             except queue.Empty:
-                continue
+                # Note this is silence *not being sent at all* — the browser stops
+                # streaming when the user stops listening. Ordinary in-speech pauses do
+                # arrive as silent frames and keep the stream alive, which is what lets
+                # Google detect the endpoint. Close cleanly instead of waiting to be
+                # killed, and let the outer loop park until the mic comes back.
+                return
             if chunk is None:
                 return
             yield speech.StreamingRecognizeRequest(audio_content=chunk)
@@ -142,9 +162,12 @@ class GoogleASRModule(retico_core.AbstractModule):
 
         backoff = 0.0
         while self._running:
+            first = self._await_audio()
+            if first is None:
+                break
             try:
                 responses = client.streaming_recognize(
-                    config=streaming_config, requests=self._requests(speech)
+                    config=streaming_config, requests=self._requests(speech, first)
                 )
                 for response in responses:
                     if not self._running:
@@ -161,6 +184,13 @@ class GoogleASRModule(retico_core.AbstractModule):
                 if not self._running:
                     break
                 kind = type(exc).__name__
+                if kind == "OutOfRange":
+                    # Google's idle/duration timeout. Expected punctuation between
+                    # utterances, not a failure — backing off here is what previously
+                    # left the module asleep for up to 30 s when speech finally started,
+                    # swallowing the beginning of the turn.
+                    backoff = 0.0
+                    continue
                 if kind in _FATAL:
                     # Log once and stand down. The provider stays switchable, so the user
                     # can fall back to browser ASR instead of watching the log fill up.

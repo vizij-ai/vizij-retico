@@ -28,6 +28,16 @@ fi
 
 # dlib has no wheels for recent Pythons and builds from source (~3 min, needs a C++
 # toolchain). opencv + retico-vision are ordinary installs.
+# opencv-python-headless in a container: the GUI build pulls libGL/X11, which a server
+# image has no use for and which makes `import cv2` fail with a missing libGL.so.1.
+if [ "${VENDOR_ONLY:-0}" = "1" ]; then
+  uv pip install "./$VENDOR/retico-vision" opencv-python-headless dlib
+  # The project itself isn't installed at this point (Docker deps stage), so there is
+  # nothing to verify against yet — the runtime stage does that.
+  echo "vendored retico-fer + emonet + retico-vision"
+  exit 0
+fi
+
 uv pip install "./$VENDOR/retico-vision" opencv-python dlib
 
 uv run --extra full python -c "
