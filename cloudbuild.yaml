@@ -42,9 +42,12 @@ steps:
       - --build-arg=PROFILE=${_PROFILE}
       - --build-arg=VIZIJ_WEB_REF=${_VIZIJ_WEB_REF}
       - --tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:${_PROFILE}
-      - --tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:${_PROFILE}-$SHORT_SHA
+      # $BUILD_ID, not $SHORT_SHA: the latter is only populated for trigger-based builds,
+      # so `gcloud builds submit` from a working copy tagged the first image a dangling
+      # "lite-". $BUILD_ID is always set and is unique per build.
+      - --tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:${_PROFILE}-$BUILD_ID
       - .
 
 images:
   - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:${_PROFILE}
-  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:${_PROFILE}-$SHORT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:${_PROFILE}-$BUILD_ID

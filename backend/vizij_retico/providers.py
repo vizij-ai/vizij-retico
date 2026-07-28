@@ -40,6 +40,25 @@ class Provider:
         }
 
 
+def _running_in_container() -> bool:
+    """Cloud Run sets K_SERVICE; Docker leaves /.dockerenv behind."""
+    if os.environ.get("K_SERVICE"):
+        return True
+    return os.path.exists("/.dockerenv")
+
+
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+
+
+def _is_loopback(url: str) -> bool:
+    from urllib.parse import urlparse
+
+    try:
+        return (urlparse(url).hostname or "") in _LOOPBACK_HOSTS
+    except ValueError:
+        return False
+
+
 def _has_aws_credentials() -> bool:
     """True if boto3 will be able to find credentials for Polly."""
     if os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"):
@@ -56,13 +75,25 @@ def _has_aws_credentials() -> bool:
 
 def llm_providers() -> dict[str, Provider]:
     gemini_key = CONFIG.gemini_api_key
+    # We can't cheaply prove a local server is up, so a reachable-looking LM Studio stays
+    # selectable and errors surface on use. But in a container, loopback *is* the
+    # container — there is definitively nothing there, and the first deploy showed
+    # lmstudio advertised as available on Cloud Run. Only rule out that specific case, so
+    # pointing LLM_BASE_URL at a real host still works from inside a container.
+    lmstudio_ok = not (
+        _running_in_container() and _is_loopback(CONFIG.llm_base_url)
+    )
     return {
         "lmstudio": Provider(
             id="lmstudio",
             label="LM Studio (local)",
-            note="OpenAI-compatible server on this machine",
+            note=(
+                "OpenAI-compatible server on this machine"
+                if lmstudio_ok
+                else "unreachable — localhost is this container, not your machine"
+            ),
             requires_key=False,
-            available=True,  # can't cheaply prove the server is up; errors surface on use
+            available=lmstudio_ok,
             settings={
                 "base_url": CONFIG.llm_base_url,
                 "model": CONFIG.llm_model,

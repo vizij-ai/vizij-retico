@@ -35,13 +35,25 @@ Two separate facts, both verified the hard way:
    for the current platform."*
 
 So the `full` image must be built on/for amd64 regardless. Build it on Cloud Build — the
-repo ships a [`cloudbuild.yaml`](../cloudbuild.yaml) for exactly this:
+repo ships a [`cloudbuild.yaml`](../cloudbuild.yaml) for exactly this. Once per project:
 
 ```bash
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
+  artifactregistry.googleapis.com secretmanager.googleapis.com
 gcloud artifacts repositories create vizij --repository-format=docker --location=us-central1
+```
+
+Then build:
+
+```bash
 gcloud builds submit --config cloudbuild.yaml                              # lite
 gcloud builds submit --config cloudbuild.yaml --substitutions=_PROFILE=full
 ```
+
+**Wait a minute after enabling the APIs.** Submitting immediately fails with
+`PERMISSION_DENIED: The caller does not have permission` even when your account is
+project Owner — the Cloud Build service agent's IAM binding hasn't propagated yet. It
+reads like a permissions problem you need to fix; it isn't. Retrying succeeds.
 
 It pins a bigger machine and disk (`E2_HIGHCPU_8`, 200 GB) and a 1 hour timeout, because
 the frontend stage builds the whole vizij-web monorepo and `full` additionally installs
@@ -205,14 +217,17 @@ error rather than failing obscurely. EmoNet stays a local research option, insta
 | `lite` genuinely omits torch | ✅ verified inside the image |
 | provider registry reports honestly in-container | ✅ whisper shows unavailable in `lite` |
 | `full` dependencies resolve and install (amd64) | ✅ 104 packages, torch 2.13.0 — 6.17 GB deps layer |
-| `full` image builds end to end | ❌ not yet — needs an amd64 builder |
+| `full` image builds end to end | ❌ not yet — but Cloud Build is now proven, so this is just a matter of running it |
 | frontend builds with MediaPipe FER | ✅ production build clean |
 | backend degrades without vendored EmoNet | ✅ registry reports unavailable, no crash |
 | weights pre-fetch actually populates the image | ❌ untested (added, never run) |
 | secret/deploy scripts emit the right `gcloud` calls | ✅ exercised against a stubbed `gcloud` |
 | secrets reach `gcloud` via stdin, never argv | ✅ asserted by byte count in the stub |
-| the scripts against a real GCP project | ❌ never run — needs your project |
-| anything on Cloud Run | ❌ never deployed |
+| `lite` builds on Cloud Build (amd64) | ✅ 3m59s in project `vizij-retico` |
+| `lite` deploys and serves on Cloud Run | ✅ `/health` 200 in 143 ms, SPA + 1.67 MB bundle |
+| WebSocket `/ws` over TLS on Cloud Run | ✅ `hello` received with full registry |
+| registry honest in a *deployed* container | ✅ whisper/emonet/gemini/polly all correctly unavailable |
+| an actual dialogue turn in the cloud | ❌ needs `GEMINI_API_KEY` in Secret Manager |
 
 ## 13.8 Honest limits
 
