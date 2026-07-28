@@ -29,7 +29,6 @@ fi
 
 # secret-name : ENV_VAR_TO_MOUNT_IT_AS
 CANDIDATES=(
-  "gemini-api-key:GEMINI_API_KEY"
   "aws-access-key-id:AWS_ACCESS_KEY_ID"
   "aws-secret-access-key:AWS_SECRET_ACCESS_KEY"
   "hf-token:HF_TOKEN"
@@ -65,7 +64,7 @@ args=(
   # fails with NoRegionError even when the credentials mount correctly.
   # Vertex by default: it bills to this project's ordinary Cloud billing account and
   # authenticates with the runtime service account's ADC, so the deployment needs no LLM
-  # key at all. Override with LLM_PROVIDER=gemini to use an AI Studio key instead.
+  # key at all. ASR likewise: Google STT authenticates with the same credentials.
   --set-env-vars "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1},LLM_PROVIDER=${LLM_PROVIDER:-vertex},VERTEX_PROJECT=${PROJECT},VERTEX_LOCATION=${VERTEX_LOCATION:-us-central1}"
 )
 

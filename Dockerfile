@@ -81,14 +81,16 @@ COPY backend/ ./
 # the WebSocket on one port, which is what Cloud Run expects.
 COPY --from=web /work/vizij-retico/frontend/dist /app/frontend-dist
 # LLM_PROVIDER: LM Studio is a developer-machine convenience — inside a container
-# localhost:1234 is the container itself. Deployments talk to Gemini, so supply
-# GEMINI_API_KEY (Secret Manager). Override at deploy time if you tunnel to something else.
+# localhost:1234 is the container itself. Deployments use Vertex, which authenticates
+# with the runtime service account's ADC, so no key is needed. ASR_SOURCE likewise:
+# Google STT uses the same credentials. Both are overridable at deploy time.
 ENV VIZIJ_RETICO_STATIC=/app/frontend-dist \
     VIZIJ_RETICO_MODE=$PROFILE \
     PYTHONUNBUFFERED=1 \
     PORT=8080 \
     HF_HOME=/app/models \
-    LLM_PROVIDER=gemini
+    LLM_PROVIDER=vertex \
+    ASR_SOURCE=google
 
 # Pre-download the VAP and Whisper weights into the image. Cloud Run's filesystem is
 # ephemeral, so without this every cold start re-downloads gigabytes from HuggingFace —

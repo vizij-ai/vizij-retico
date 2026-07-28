@@ -70,9 +70,24 @@ def _build_lite(hub: WebSocketHub, framer: EventFramer):
     tts = TTSModule(say=hub.say_handler)
     bridge = VizijWebSocketModule(hub, classifiers=MaaiClassifiers().registry, framer=framer)
 
+    # Two ASR sources feed a gate that forwards only the active one — the same shape as
+    # the maai profile, so switching behaves identically in both. Google STT needs the
+    # audio itself, which this profile previously had no consumer for at all.
+    from .asr_switch import AsrGate
+    from .google_asr import GoogleASRModule
+    from .web_input import WebInputModule
+
+    gate = AsrGate(get_source=lambda: hub.asr_source)
     browser_asr = BrowserASRModule(hub)
-    browser_asr.subscribe(bridge)
-    browser_asr.subscribe(llm)
+    browser_asr.subscribe(gate)
+
+    web_in = WebInputModule(hub)
+    google_asr = GoogleASRModule()
+    web_in.subscribe(google_asr)
+    google_asr.subscribe(gate)
+
+    gate.subscribe(bridge)
+    gate.subscribe(llm)
     llm.subscribe(tts)
     affect = AffectModule()
     llm.subscribe(affect)
@@ -97,6 +112,15 @@ def _build_lite(hub: WebSocketHub, framer: EventFramer):
             llm.set_provider(provider_id, spec.settings)
         elif kind == "tts":
             hub.tts_provider = provider_id
+        elif kind == "asr":
+            # Both sources stay live; the gate decides which reaches the graph.
+            hub.asr_source = provider_id
+            hub.broadcast(
+                framer.frame(
+                    "asr.source",
+                    {"state": "active", "source": provider_id, "detail": spec.label},
+                )
+            )
         else:
             return
         hub.active_providers[kind] = provider_id
@@ -105,12 +129,16 @@ def _build_lite(hub: WebSocketHub, framer: EventFramer):
         )
 
     hub.set_provider_handler = _set_provider
+    hub.set_asr_source_handler = lambda source: _set_provider("asr", source)
     llm_spec = providers.get("llm", CONFIG.llm_provider) or providers.get("llm", "lmstudio")
     if llm_spec is not None:
         llm.set_provider(llm_spec.id, llm_spec.settings)
         hub.active_providers["llm"] = llm_spec.id
 
-    return browser_asr, [browser_asr, browser_fer, fer_gate, llm, tts, affect, bridge]
+    return browser_asr, [
+        web_in, google_asr, browser_asr, gate, browser_fer, fer_gate,
+        llm, tts, affect, bridge,
+    ]
 
 
 def _build_maai(hub: WebSocketHub, framer: EventFramer):
@@ -157,9 +185,15 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
     from .asr_switch import AsrGate, AsrSwitcher
     from .browser_asr import BrowserASRModule
 
+    from .google_asr import GoogleASRModule
+
     gate = AsrGate(get_source=lambda: hub.asr_source)
     browser_asr = BrowserASRModule(hub)  # head producer, fed by the browser via the hub
     browser_asr.subscribe(gate)
+    # Google STT reads the same streamed audio the turn-taking models do.
+    google_asr = GoogleASRModule()
+    web_in.subscribe(google_asr)
+    google_asr.subscribe(gate)
     gate.subscribe(bridge)
     gate.subscribe(llm)
     # Streamed clauses -> speech, spoken in generation order.
@@ -244,7 +278,7 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
         switcher.set_source("whisper")  # brings Whisper up in the background
 
     return web_in, [
-        web_in, turn, bc, nod, browser_asr, gate, browser_fer, fer_gate,
+        web_in, turn, bc, nod, browser_asr, google_asr, gate, browser_fer, fer_gate,
         llm, tts, affect, bridge,
     ]
 
@@ -254,10 +288,18 @@ def start(mode: str = "fake") -> RunningNetwork:
     mode = "maai" if mode == "full" else mode
     hub = WebSocketHub(CONFIG.host, CONFIG.port)
     hub.mode = mode
-    # Start on the browser path even when whisper is configured: Whisper loads in the
-    # background, and the switcher flips the source once it's actually ready (so a slow
-    # or failed model load can't leave the graph with no ASR at all).
-    hub.asr_source = "browser"
+    # Whisper is the exception to honouring CONFIG here: it loads in the background, and
+    # the switcher flips the source once it's actually ready, so a slow or failed model
+    # load can't leave the graph with no ASR at all. Google STT and browser are both
+    # ready immediately. Fall back if the configured source isn't usable in this build.
+    wanted = CONFIG.asr_source
+    if wanted == "whisper":
+        hub.asr_source = "browser"
+    else:
+        spec = providers.get("asr", wanted)
+        hub.asr_source = wanted if (spec and spec.available) else "browser"
+        if hub.asr_source != wanted:
+            print(f"[asr] {wanted} unavailable, starting on browser")
     hub.tts_provider = CONFIG.tts_provider
     hub.fer_source = CONFIG.fer_source
     hub.active_providers = {
@@ -275,7 +317,7 @@ def start(mode: str = "fake") -> RunningNetwork:
             "backchannel": True,
             "fer": True,
             "nod": True,
-            "asr_options": ["browser", "whisper"],  # switchable at runtime
+            "asr_options": ["google", "browser", "whisper"],  # switchable at runtime
             "llm": {"model": CONFIG.llm_model or "auto-detect", "gated_on_turn": True},
             "tts": CONFIG.tts_provider,
             "lipsync": "amplitude (jaw_open); visemes available, not wired",
@@ -285,7 +327,7 @@ def start(mode: str = "fake") -> RunningNetwork:
     elif mode == "lite":
         hub.pipeline = {
             "mode": "lite",
-            "asr_options": ["browser"],
+            "asr_options": ["google", "browser"],
             "llm": {"model": CONFIG.llm_model or "auto-detect", "gated_on_turn": False},
             "tts": CONFIG.tts_provider,
             "lipsync": "visemes (Polly) or amplitude (gTTS)",

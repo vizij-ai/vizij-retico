@@ -78,9 +78,11 @@ function ReticoBridge({
     }
   };
 
-  // One "listen" toggle: always stream audio (for turn-taking); also run browser STT
-  // when the backend is in browser-ASR mode.
-  const useBrowserAsr = asrSource !== "whisper";
+  // One "listen" toggle: always stream audio (turn-taking and the server-side ASRs both
+  // need it); additionally run the browser recognizer only when it is the active source.
+  // Allow-list rather than "not whisper": with google now an option too, a deny-list
+  // would leave Web Speech running alongside a server ASR and commit two transcripts.
+  const useBrowserAsr = asrSource === "browser" || asrSource === null;
   const listening = mic.active;
   // Only toggles the audio stream; the effect below owns starting/stopping the browser
   // recognizer (starting it here too would create a second one and duplicate results).

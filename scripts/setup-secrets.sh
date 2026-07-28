@@ -7,7 +7,6 @@
 # will simply show that provider as unavailable rather than failing (the provider registry
 # computes availability from the environment, so mounted secrets need no code change).
 #
-#   export GEMINI_API_KEY=...            # LLM
 #   export AWS_ACCESS_KEY_ID=...         # Polly TTS (visemes)
 #   export AWS_SECRET_ACCESS_KEY=...
 #   export HF_TOKEN=...                  # optional: avoids HuggingFace rate limits
@@ -27,7 +26,6 @@ gcloud services enable secretmanager.googleapis.com --project "$PROJECT" >/dev/n
 
 # secret-name : environment-variable
 SECRETS=(
-  "gemini-api-key:GEMINI_API_KEY"
   "aws-access-key-id:AWS_ACCESS_KEY_ID"
   "aws-secret-access-key:AWS_SECRET_ACCESS_KEY"
   "hf-token:HF_TOKEN"

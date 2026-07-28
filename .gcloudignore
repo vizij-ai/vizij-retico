@@ -20,6 +20,7 @@
 backend/vendor/
 
 # not needed to build or run
+.github/
 docs/figures/
 *.log
 *.md

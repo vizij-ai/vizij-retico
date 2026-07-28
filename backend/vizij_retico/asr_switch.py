@@ -24,9 +24,13 @@ from retico_core.text import SpeechRecognitionIU
 
 
 def source_of(iu: Any) -> str:
-    """Which ASR produced this IU ('whisper' | 'browser')."""
-    creator = getattr(iu, "creator", None)
-    return "whisper" if "Whisper" in type(creator).__name__ else "browser"
+    """Which ASR produced this IU ('whisper' | 'google' | 'browser')."""
+    name = type(getattr(iu, "creator", None)).__name__
+    if "Whisper" in name:
+        return "whisper"
+    if "Google" in name:
+        return "google"
+    return "browser"
 
 
 class AsrGate(retico_core.AbstractModule):

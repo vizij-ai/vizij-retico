@@ -74,7 +74,6 @@ def _has_aws_credentials() -> bool:
 
 
 def llm_providers() -> dict[str, Provider]:
-    gemini_key = CONFIG.gemini_api_key
     # We can't cheaply prove a local server is up, so a reachable-looking LM Studio stays
     # selectable and errors surface on use. But in a container, loopback *is* the
     # container — there is definitively nothing there, and the first deploy showed
@@ -103,30 +102,19 @@ def llm_providers() -> dict[str, Provider]:
                 "system_suffix": " /no_think",
             },
         ),
-        "gemini": Provider(
-            id="gemini",
-            label="Gemini (AI Studio)",
-            note="needs GEMINI_API_KEY" if not gemini_key else CONFIG.gemini_model,
-            requires_key=True,
-            available=bool(gemini_key),
-            settings={
-                "base_url": CONFIG.gemini_base_url,
-                "model": CONFIG.gemini_model,
-                "api_key": gemini_key,
-                "system_suffix": "",
-            },
-        ),
         "vertex": _vertex_provider(),
     }
 
 
 def _vertex_provider() -> Provider:
-    """Gemini via Vertex AI: same models and protocol, different billing and auth.
+    """Gemini via Vertex AI — the only Gemini path.
 
-    Worth having as a separate entry rather than a flag on `gemini`, because the two
-    differ in the ways the UI needs to show: Vertex bills to the project's Cloud billing
-    account instead of AI Studio prepayment credits, and authenticates with ADC — so a
-    Cloud Run deployment needs no API key secret at all.
+    The AI Studio endpoint (generativelanguage.googleapis.com + a static API key) was
+    removed: it bills through prepayment credits that are separate from the project's
+    Cloud billing account, so it fails with 429 while the key authenticates perfectly —
+    a confusing failure to leave selectable. Vertex serves the same models over the same
+    OpenAI protocol, bills to Cloud billing, and authenticates with ADC, so a deployment
+    needs no API key secret at all.
     """
     from . import gcp_auth
 
@@ -188,7 +176,21 @@ def asr_providers() -> dict[str, Provider]:
     # retico-whisperasr is an optional extra — the "lite" container omits it, so the
     # option must show as unavailable there rather than failing when selected.
     whisper_ok = importlib.util.find_spec("retico_whisperasr") is not None
+    from . import google_asr
+
+    google_ok, google_detail = google_asr.available()
     return {
+        "google": Provider(
+            id="google",
+            label="Google Cloud STT",
+            note=(
+                f"streaming recognition · {google_detail}"
+                if google_ok
+                else f"unavailable — {google_detail}"
+            ),
+            requires_key=False,  # ADC, same credentials as Vertex
+            available=google_ok,
+        ),
         "browser": Provider(
             id="browser",
             label="Browser (Web Speech)",

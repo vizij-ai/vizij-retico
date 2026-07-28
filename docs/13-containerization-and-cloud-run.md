@@ -10,9 +10,9 @@ shipping only dialogue would drop the part the paper is actually about.
 
 | | `lite` (default) | `full` |
 |---|---|---|
-| ASR | browser (Web Speech) | browser **or** local Whisper |
+| ASR | Google STT (default) or browser | + local Whisper |
 | Turn-taking | none | retico-maai VAP + backchannel + nod |
-| LLM / TTS | same in both (LM Studio / Gemini, gTTS / Polly) | same |
+| LLM / TTS | same in both (Vertex / LM Studio, gTTS / Polly) | same |
 | torch | no | yes |
 | Image | small | multi-GB |
 | Cloud Run | comfortable | needs CPU always-on; measure before committing |
@@ -101,15 +101,15 @@ Every credential lives in Secret Manager and is mounted as an environment variab
 run time. Nothing is baked into the image, and nothing is passed on a command line where
 it would land in shell history or a process list.
 
-The shortest version: **a default deploy needs no secrets at all.** The LLM goes through
-Vertex on the runtime service account's own credentials, and TTS falls back to gTTS. The
-secrets below buy you the AI Studio LLM path and Polly visemes.
+The shortest version: **a default deploy needs no secrets at all.** Both Google services
+this system uses — Vertex for the LLM and Cloud Speech-to-Text for ASR — authenticate as
+the Cloud Run runtime service account, and TTS falls back to gTTS. The only secret left
+is AWS, and only if you want Polly visemes.
 
 Set whichever you have in your own shell, then run the setup script — it reads the values
 from the environment, pipes them to `gcloud` over stdin, and never prints them:
 
 ```bash
-export GEMINI_API_KEY=...            # LLM
 export AWS_ACCESS_KEY_ID=...         # Polly TTS (visemes)
 export AWS_SECRET_ACCESS_KEY=...
 ./scripts/setup-secrets.sh
@@ -117,7 +117,6 @@ export AWS_SECRET_ACCESS_KEY=...
 
 | secret | env var | enables | required? |
 |---|---|---|---|
-| `gemini-api-key` | `GEMINI_API_KEY` | the AI Studio LLM path | no — `deploy.sh` defaults to Vertex, which uses no key (below) |
 | `aws-access-key-id` | `AWS_ACCESS_KEY_ID` | Polly visemes | no — falls back to gTTS + amplitude lip-sync |
 | `aws-secret-access-key` | `AWS_SECRET_ACCESS_KEY` | Polly visemes | no |
 | `hf-token` | `HF_TOKEN` | avoids HuggingFace rate limits on `full` | no |
@@ -127,81 +126,51 @@ registry computes `available` from the environment, so an unmounted secret surfa
 greyed-out option in the UI instead of a runtime failure — the same mechanism that makes
 [`providers.py`](../backend/vizij_retico/providers.py) honest locally.
 
-### Minting the Gemini key without ever handling it
+### The Google services need no key at all
 
-If you don't already have a key, `gcloud` can create one and hand it to Secret Manager
-directly, so the value never appears on a terminal or in shell history:
+Both Google-side services authenticate with Application Default Credentials, i.e. as the
+Cloud Run runtime service account. Nothing to mint, mount, rotate or leak:
 
-```bash
-gcloud services enable generativelanguage.googleapis.com apikeys.googleapis.com
-gcloud services api-keys create --display-name="vizij-retico Gemini" \
-  --api-target=service=generativelanguage.googleapis.com
-KEY_UID=...   # the uid from `gcloud services api-keys list`
-gcloud services api-keys get-key-string "$KEY_UID" --format='value(keyString)' \
-  | tr -d '\n' \
-  | gcloud secrets create gemini-api-key --replication-policy=automatic --data-file=-
-```
-
-`--api-target` restricts the key to the Gemini API, so a leak can't be spent on anything
-else. **The `tr -d '\n'` is required**, not tidiness: `--format='value(...)'` appends a
-newline, and a secret with a trailing newline produces a malformed `Authorization` header
-that fails in a way pointing nowhere near the real cause. Verify with
-`gcloud secrets versions access latest --secret=gemini-api-key | wc -c` — a Google API key
-is exactly 39 bytes.
-
-Note that `gcloud services api-keys list` returns **empty and exits 0** when
-`apikeys.googleapis.com` is disabled, rather than erroring. An empty list is therefore not
-evidence that a project has no keys until you've enabled that API.
-
-### Or skip the key entirely: Gemini via Vertex AI
-
-`deploy.sh` defaults to the **vertex** LLM provider, which needs no secret at all. Vertex
-serves the same Gemini models over the same OpenAI-compatible protocol, but:
-
-| | `gemini` (AI Studio) | `vertex` |
+| | service | role needed |
 |---|---|---|
-| Auth | static `GEMINI_API_KEY` | ADC — the runtime service account |
-| Billing | AI Studio prepayment credits | the project's Cloud billing account |
-| Secret to manage | yes | **none** |
-
-That makes it the better default for a deployed demo: there is no key to mount, rotate or
-leak, and spend lands on the same invoice as Cloud Run and Cloud Build. The runtime
-service account needs `roles/aiplatform.user`:
+| LLM | Vertex AI (`gemini-2.5-flash`) | `roles/aiplatform.user` |
+| ASR | Cloud Speech-to-Text | `roles/speech.client` (or `editor`) |
 
 ```bash
+gcloud services enable aiplatform.googleapis.com speech.googleapis.com
 gcloud projects add-iam-policy-binding PROJECT \
   --member="serviceAccount:PROJECTNUMBER-compute@developer.gserviceaccount.com" \
   --role=roles/aiplatform.user
 ```
 
-Locally, `gcloud auth application-default login` supplies the same credentials. Two
-things to know:
+Locally, `gcloud auth application-default login` supplies the same credentials.
+
+**The AI Studio Gemini path was removed.** It used a static `GEMINI_API_KEY` against
+`generativelanguage.googleapis.com`, and it bills through AI Studio *prepayment credits*
+that are separate from the project's Cloud billing account. The failure mode is nasty:
+the key authenticates fine (`GET /models` → 200) and every generation call returns
+`429 RESOURCE_EXHAUSTED — "Your prepayment credits are depleted."` A 429 rather than
+401/403 is the tell, but the option looked available in the UI right up until you used
+it. Vertex serves the same models over the same OpenAI protocol on ordinary Cloud
+billing, so keeping both was offering a choice between "works" and "looks like it works".
+
+Four things that bite on the ADC path:
 
 - **Tokens expire in about an hour**, so they are minted per request rather than captured
   when the provider is selected. A long-running instance would otherwise start returning
   401 mid-session, which reads as a permissions bug rather than an expiry.
-- **Set `VERTEX_PROJECT` explicitly.** ADC resolves whatever project your local `gcloud
-  config` points at, which is frequently not the one you are deploying to.
+- **Pin the project explicitly** (`VERTEX_PROJECT`, `GOOGLE_ASR_PROJECT`). ADC resolves
+  whatever project your local `gcloud config` points at. During development that silently
+  billed STT to an unrelated project and failed with "API not enabled" naming a project
+  nobody had mentioned.
 - **Gemini 2.5 thinks by default, and it is expensive here**: measured 575 reasoning
   tokens to produce a 20-token sentence, and with a small `max_tokens` the reply is
-  truncated to nothing at all. The provider sets
-  `thinking_config.thinking_budget = 0`. Note `reasoning_effort: "none"` is *rejected* by
-  this endpoint — it accepts only `high`/`low`/`medium`/`minimal`.
-
-### Gemini quota is separate from Cloud billing
-
-A key can authenticate perfectly and still fail every generation call. Cloud Run and Cloud
-Build bill through the project's Cloud billing account; the Gemini API bills through AI
-Studio prepayment credits, which are **separate**. Symptom:
-
-```
-GET  /v1beta/openai/models            -> 200
-POST /v1beta/openai/chat/completions  -> 429 RESOURCE_EXHAUSTED
-     "Your prepayment credits are depleted."
-```
-
-A 429 rather than 401/403 is the tell that the key is fine and the quota is not. Top up at
-[ai.studio/projects](https://ai.studio/projects) for the same project the key belongs to.
+  truncated to nothing at all. The provider sets `thinking_config.thinking_budget = 0`.
+  Note `reasoning_effort: "none"` is *rejected* — only `high`/`low`/`medium`/`minimal`.
+- **Streaming STT needs silence to endpoint.** Google emits a final result when it hears
+  the utterance end, so the client must keep streaming during pauses rather than stopping
+  when speech stops. The browser mic does this naturally; a test harness that stops
+  feeding audio gets interim hypotheses forever and never a COMMIT.
 
 Two things the setup script does that are easy to miss by hand:
 
@@ -232,9 +201,8 @@ gcloud run deploy vizij-retico \
   --image us-central1-docker.pkg.dev/PROJECT/vizij/vizij-retico:lite \
   --region us-central1 --allow-unauthenticated --port 8080 \
   --timeout 3600 --session-affinity \
-  --set-env-vars AWS_DEFAULT_REGION=us-east-1 \
-  --set-secrets GEMINI_API_KEY=gemini-api-key:latest,\
-AWS_ACCESS_KEY_ID=aws-access-key-id:latest,\
+  --set-env-vars AWS_DEFAULT_REGION=us-east-1,LLM_PROVIDER=vertex,VERTEX_PROJECT=PROJECT \
+  --set-secrets AWS_ACCESS_KEY_ID=aws-access-key-id:latest,\
 AWS_SECRET_ACCESS_KEY=aws-secret-access-key:latest
 ```
 
@@ -255,9 +223,9 @@ Things that will bite otherwise:
 - **Session affinity** (`--session-affinity`) if you scale past one instance: the audio
   stream and the retico graph are per-instance state, so a client must keep talking to
   the instance that holds its network.
-- **LM Studio does not exist in the cloud.** The default LLM provider points at
-  `localhost:1234`, which in a container is the container. Set `LLM_PROVIDER=gemini` and
-  supply `GEMINI_API_KEY`, or the first turn fails with "no model available".
+- **LM Studio does not exist in the cloud.** Its base URL is `localhost:1234`, which in a
+  container is the container. The image defaults to `LLM_PROVIDER=vertex`, and the
+  registry marks lmstudio unavailable when containerized so it can't be selected.
 - **Cold start** on `full` is dominated by model loading. The Dockerfile now pre-fetches
   the VAP and Whisper weights into `HF_HOME=/app/models` at build time, because Cloud
   Run's filesystem is ephemeral and without it *every* cold start re-downloads gigabytes.
@@ -270,7 +238,53 @@ Things that will bite otherwise:
 - **Memory.** `full` loads torch, VAP and Whisper — budget several GiB
   (`--memory 8Gi` is a sane starting point) and measure.
 
-## 13.6 FER in a deployed image
+## 13.6 Continuous deployment
+
+[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) builds and deploys on
+every push to `main`: Cloud Build → `scripts/deploy.sh` → a smoke test that fails the job
+unless `/health` returns 200. A deploy that returns a URL but serves errors is still a
+failed deploy, so the check is part of the workflow rather than something to remember.
+
+**No service account key is stored in GitHub.** Auth is Workload Identity Federation:
+GitHub mints a short-lived OIDC token, GCP exchanges it for credentials on the
+`github-deployer` service account. The provider carries an attribute condition —
+
+```
+assertion.repository == 'vizij-ai/vizij-retico'
+```
+
+— and the service account's `workloadIdentityUser` binding is scoped to the same
+`attribute.repository` principalSet, so a fork or another repo in the org cannot obtain
+the identity even though the provider is org-visible. This is worth the extra setup over
+a JSON key: there is no long-lived credential to leak, rotate, or find in a git history.
+
+The deployer holds six roles, deliberately not `editor`:
+
+| role | why |
+|---|---|
+| `run.admin` | deploy the service |
+| `cloudbuild.builds.editor` | submit builds |
+| `artifactregistry.writer` | push the image |
+| `storage.objectAdmin` | upload build source |
+| `secretmanager.viewer` | `deploy.sh` checks which secrets exist |
+| `serviceusage.serviceUsageConsumer` | make API calls against the project |
+
+plus `iam.serviceAccountUser` on the *runtime* service account — Cloud Run deploys run as
+that account, and without `actAs` the deploy is rejected.
+
+One-time provisioning, all non-interactive (unlike hooking Cloud Build up to GitHub,
+which needs an OAuth app install in the console):
+
+```bash
+gcloud iam workload-identity-pools create github --location=global
+gcloud iam workload-identity-pools providers create-oidc github \
+  --location=global --workload-identity-pool=github \
+  --issuer-uri="https://token.actions.githubusercontent.com" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
+  --attribute-condition="assertion.repository == 'OWNER/REPO'"
+```
+
+## 13.7 FER in a deployed image
 
 Both FER providers exist, but only one is deployed, and that is deliberate:
 
@@ -288,7 +302,7 @@ builds and simply shows emonet as unavailable, and attempting to select it raise
 error rather than failing obscurely. EmoNet stays a local research option, installed with
 `backend/scripts/install-emonet.sh`.
 
-## 13.7 What is actually verified
+## 13.8 What is actually verified
 
 | | status |
 |---|---|
@@ -307,15 +321,17 @@ error rather than failing obscurely. EmoNet stays a local research option, insta
 | `lite` deploys and serves on Cloud Run | ✅ `/health` 200 in 143 ms, SPA + 1.67 MB bundle |
 | WebSocket `/ws` over TLS on Cloud Run | ✅ `hello` received with full registry |
 | registry honest in a *deployed* container | ✅ whisper/emonet/gemini/polly all correctly unavailable |
-| `GEMINI_API_KEY` mounts and authenticates | ✅ 200 from Gemini `/models`, `gemini-2.5-flash` listed |
+| Vertex LLM authenticates via ADC | ✅ non-streaming + streaming, first chunk 1.01 s |
 | incremental ASR IUs stream over the cloud WebSocket | ✅ ADD-per-word then COMMIT, first frame 63 ms |
 | gTTS synthesis in the cloud | ✅ 22 KB valid MP3 in 0.29 s via `control:say` |
 | an actual LLM turn in the cloud | ✅ via Vertex — full turn in 1.17 s |
 | the face renders in a deployed browser | ✅ WASM + rig load, no console errors |
 | end-to-end from the deployed UI | ✅ heard → excited affect → speech → face animates |
-| the AI Studio (`gemini`) path in the cloud | ❌ 429, prepayment credits — see below |
+| Google STT module, real speech in | ✅ 56 ADD / 50 REVOKE / 1 COMMIT, transcript exact |
+| Google STT in the deployed container | ❌ not yet — needs a live mic through the UI |
+| CI deploy on merge to main | ❌ not yet — first run is this commit |
 
-## 13.8 Honest limits
+## 13.9 Honest limits
 
 - `--allow-unauthenticated` plus the permissive CORS in the hub makes this a **demo**
   deployment, not a hardened service. Anyone with the URL can drive the face and spend
