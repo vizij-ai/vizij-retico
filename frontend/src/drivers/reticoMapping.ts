@@ -148,10 +148,35 @@ export const LIPSYNC = {
   gain: 3.5,
   max: 1.0,
   smoothing: 0.5, // 0..1 low-pass toward the new amplitude each frame
-  /** Cross-fade between viseme poses. Short — phonemes are ~60-120 ms apart. */
-  visemeFadeMs: 55,
-  /** A little jaw under the visemes stops the mouth reading as flat. */
-  visemeJaw: 0.25,
+
+  // --- viseme timeline, ported from @vizij/speech-react's useSpeechPlayback ---------
+  //
+  // The previous version cross-faded a fixed 55 ms *starting at* each phoneme's
+  // timestamp, driven by a performance.now() clock captured before the audio had even
+  // decoded. Three separate reasons the mouth popped: every shape arrived ~55 ms late,
+  // the clock drifted from the audio and never re-synced, and each pose reached full
+  // weight before the next began.
+
+  /** Floor/ceiling for both the anticipatory lead-in and the cross-fade length. */
+  minSpanMs: 45,
+  maxSpanMs: 320,
+  /** How long after the last phoneme the mouth returns to rest. */
+  releaseMs: 120,
+  /** Fade applied to every viseme channel when speech stops. */
+  clearMs: 50,
+
+  // The tween is given `remaining / DURATION_DIVISOR` seconds. Dividing by 250 rather
+  // than 1000 makes it 4x longer than the time until the next phoneme, so a tween is
+  // always still in flight when the next viseme re-targets it. Weights therefore never
+  // saturate (they peak around 20-40%), and because animateValue re-targets from the
+  // *current live value* the net effect is a first-order low-pass filter on the viseme
+  // signal. This is the single thing that makes it read as speech rather than a
+  // slideshow — /1000 gives crisp, correct-duration, much more jarring lip-sync.
+  // Matches all three implementations in vizij-web.
+  durationDivisor: 250,
+
+  /** Peak pose weight. 0.75 matches vizij-showcase's VoicePanel. */
+  visemePeak: 0.75,
 };
 
 // Polly viseme code -> this rig's viseme pose id. Based on POLLY_TO_FACE_SEGMENT in

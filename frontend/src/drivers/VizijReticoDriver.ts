@@ -276,42 +276,86 @@ export function createReticoDriver(
       }, EMOTION.holdAfterSpeechMs);
     };
 
-    // --- speech: play TTS audio and drive jaw_open from its amplitude ----------
+    // --- speech: viseme lip-sync off the audio clock ---------------------------
+    //
+    // Ported from @vizij/speech-react's useSpeechPlayback. See LIPSYNC in
+    // reticoMapping.ts for why the tween is deliberately 4x too long.
     let audioCtx: AudioContext | null = null;
+    let mediaSource: MediaElementAudioSourceNode | null = null;
     const setJaw = (v: number) =>
       rig.setInput(rigPath(LIPSYNC.channel), { float: clamp(v, 0, LIPSYNC.max) });
-    // Viseme lip-sync: only one viseme pose is raised at a time, so the mouth can't
-    // smear into a blend of every phoneme in the utterance.
-    let activeViseme: string | null = null;
+
+    /** Every viseme channel this rig has, so stopping can release all of them. */
+    const allVisemePaths = Array.from(new Set(Object.values(POLLY_VISEME_POSE))).map(
+      visemePosePath,
+    );
+    let lastVisemePath: string | null = null;
     // Set by the utterance currently playing so a barge-in can cut it off mid-sentence.
     let stopCurrentSpeech: (() => void) | null = null;
-    const setViseme = (poseId: string | null) => {
-      if (poseId === activeViseme) return;
-      if (activeViseme) animRig(visemePosePath(activeViseme), 0, LIPSYNC.visemeFadeMs);
-      if (poseId) animRig(visemePosePath(poseId), 1, LIPSYNC.visemeFadeMs);
-      activeViseme = poseId;
+
+    const clearVisemes = () => {
+      // Release *every* channel, not just the last one raised. A tween interrupted
+      // mid-flight leaves its pose partly up, and with only the last path cleared the
+      // mouth keeps a residual shape after the utterance ends.
+      for (const path of allVisemePaths) animRig(path, 0, LIPSYNC.clearMs);
+      lastVisemePath = null;
+    };
+
+    type Entry = { start: number; transitionStart: number; path: string | null };
+
+    /** Polly marks -> a timeline whose poses land *on* the beat rather than after it. */
+    const buildTimeline = (marks: { time?: number; value?: string }[]): Entry[] => {
+      const entries: Entry[] = marks.map((m) => {
+        const pose = POLLY_VISEME_POSE[String(m.value ?? "")] ?? null; // "sil" -> null
+        return {
+          start: Number(m.time) || 0,
+          transitionStart: 0,
+          path: pose ? visemePosePath(pose) : null,
+        };
+      });
+      if (!entries.length) return entries;
+      for (let i = 0; i < entries.length; i++) {
+        // Lead in by however long the gap from the previous phoneme was, clamped. Fast
+        // consonant runs get a short lead, a held vowel gets up to maxSpanMs — so the
+        // pose is at full weight when the sound actually happens, instead of starting
+        // to move then.
+        const prevStart = i === 0 ? 0 : entries[i - 1].start;
+        const gap = i === 0 ? entries[i].start : entries[i].start - prevStart;
+        const ramp = clamp(gap, LIPSYNC.minSpanMs, LIPSYNC.maxSpanMs);
+        entries[i].transitionStart = entries[i].start - ramp;
+      }
+      // A closing "rest" entry, or the mouth holds the final phoneme.
+      const lastStart = entries[entries.length - 1].start + LIPSYNC.releaseMs;
+      entries.push({
+        start: lastStart,
+        transitionStart: lastStart - LIPSYNC.minSpanMs,
+        path: null,
+      });
+      return entries;
     };
 
     const onSpeech = (e: ReticoEvent) => {
-      // Polly-style speech marks: [{time: ms, type: "viseme", value: "p"}, …].
-      const marks: { t: number; pose: string | null }[] = (e.payload.visemes ?? []).map(
-        (m: { time?: number; value?: string }) => ({
-          t: Number(m.time) || 0,
-          pose: POLLY_VISEME_POSE[String(m.value ?? "")] ?? null, // "sil" → null
-        }),
-      );
-      const useVisemes = marks.length > 0;
+      const timeline = buildTimeline(e.payload.visemes ?? []);
+      const useVisemes = timeline.length > 0;
 
-      // The mouth animation runs off its own clock and starts immediately, so it is not
-      // hostage to audio: if playback is blocked (autoplay policy) or decoding fails,
-      // the face still speaks rather than freezing mid-utterance.
       let analyser: AnalyserNode | null = null;
       let data = new Uint8Array(0);
       let level = 0;
-      let next = 0;
+      let cursor = 0;
       let raf = 0;
       let finished = false;
+      let audioEl: HTMLAudioElement | null = null;
+      let objectUrl: string | null = null;
       const startedAt = performance.now();
+
+      // Prefer the audio element's own clock: it cannot drift from what is being heard,
+      // and it self-corrects every frame if playback stalls. Fall back to wall clock
+      // until playback actually begins (and if it never does, e.g. autoplay is blocked,
+      // the face still speaks rather than freezing mid-utterance).
+      const clockMs = () =>
+        audioEl && !audioEl.paused && audioEl.currentTime > 0
+          ? audioEl.currentTime * 1000
+          : performance.now() - startedAt;
 
       const finish = () => {
         if (finished) return;
@@ -319,18 +363,42 @@ export function createReticoDriver(
         stopCurrentSpeech = null;
         cancelAnimationFrame(raf);
         window.clearTimeout(guard);
-        setViseme(null); // release the last phoneme
-        setJaw(0); // close the mouth
+        clearVisemes();
+        setJaw(0);
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+      };
+
+      /** Cross-fade out the previous pose and in the new one, on the same frame. */
+      const applyEntry = (entry: Entry, nowMs: number) => {
+        const remaining = entry.start - nowMs;
+        const durationMs = clamp(
+          remaining > 0 ? remaining : LIPSYNC.minSpanMs,
+          LIPSYNC.minSpanMs,
+          LIPSYNC.maxSpanMs,
+        );
+        // Intentionally /250, not /1000 — see LIPSYNC.durationDivisor.
+        const durationSec = durationMs / LIPSYNC.durationDivisor;
+        if (lastVisemePath && lastVisemePath !== entry.path) {
+          void animate(rigPath(lastVisemePath), { float: 0 }, { duration: durationSec });
+        }
+        if (entry.path && entry.path !== lastVisemePath) {
+          void animate(
+            rigPath(entry.path),
+            { float: LIPSYNC.visemePeak },
+            { duration: durationSec },
+          );
+        }
+        lastVisemePath = entry.path;
       };
 
       const pump = () => {
         if (useVisemes) {
-          // Advance to whichever mark the playhead has reached.
-          const elapsed = performance.now() - startedAt;
-          let pose = activeViseme;
-          while (next < marks.length && marks[next].t <= elapsed) pose = marks[next++].pose;
-          setViseme(pose);
-          setJaw(pose ? LIPSYNC.visemeJaw : 0);
+          const nowMs = clockMs();
+          // Monotonic cursor: fire every entry whose lead-in has begun.
+          while (cursor < timeline.length && nowMs >= timeline[cursor].transitionStart) {
+            applyEntry(timeline[cursor], nowMs);
+            cursor += 1;
+          }
         } else if (analyser) {
           analyser.getByteTimeDomainData(data);
           let sum = 0;
@@ -345,42 +413,42 @@ export function createReticoDriver(
         raf = requestAnimationFrame(pump);
       };
 
-      // Backstop: end the animation even if audio never plays (so `onended` never fires).
-      const lastMark = marks.length ? marks[marks.length - 1].t : 0;
+      // Backstop: end the animation even if audio never plays (so `ended` never fires).
+      const lastMark = timeline.length ? timeline[timeline.length - 1].start : 0;
       const guard = window.setTimeout(finish, lastMark + 1500);
       pump();
 
-      let source: AudioBufferSourceNode | null = null;
       stopCurrentSpeech = () => {
-        // Stop the audio first, then run the normal teardown so the mouth closes and the
-        // viseme timeline is released — otherwise the face keeps mouthing a sentence the
-        // user can no longer hear.
         try {
-          source?.stop();
+          audioEl?.pause();
         } catch {
-          /* already stopped or never started */
+          /* never started */
         }
         finish();
       };
 
       void (async () => {
         try {
+          const bytes = base64ToArrayBuffer(e.payload.data);
+          objectUrl = URL.createObjectURL(new Blob([bytes], { type: "audio/mpeg" }));
+          const el = new Audio(objectUrl);
+          audioEl = el;
+          el.addEventListener("ended", finish);
+
+          // Route through the AudioContext so the amplitude fallback still has an
+          // analyser. createMediaElementSource can only be called once per element, and
+          // it redirects output — so the context must also be connected to destination.
           if (!audioCtx) audioCtx = new AudioContext();
-          const buf = await audioCtx.decodeAudioData(base64ToArrayBuffer(e.payload.data));
-          const src = audioCtx.createBufferSource();
-          source = src;
-          src.buffer = buf;
+          mediaSource = audioCtx.createMediaElementSource(el);
           analyser = audioCtx.createAnalyser();
           analyser.fftSize = 512;
           data = new Uint8Array(analyser.fftSize);
-          src.connect(analyser);
+          mediaSource.connect(analyser);
           analyser.connect(audioCtx.destination);
-          src.onended = finish;
-          // Don't await resume(): a blocked AudioContext leaves it pending forever.
           if (audioCtx.state === "suspended") void audioCtx.resume();
-          src.start();
+
+          await el.play();
           window.clearTimeout(guard);
-          window.setTimeout(finish, buf.duration * 1000 + 400); // in case onended is missed
         } catch (err) {
           console.warn("[retico] speech playback failed; animating without audio", err);
         }
@@ -453,7 +521,7 @@ export function createReticoDriver(
           fadeTimer = null;
         }
         setEmotion("neutral", 0); // release any held expression
-        setViseme(null);
+        clearVisemes();
         tiltDeg = 0;
         headBusy = false;
         headRestore(200); // never leave the head off-axis
