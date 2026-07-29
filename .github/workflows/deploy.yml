@@ -1,4 +1,4 @@
-# Build and deploy to Cloud Run on merge to main.
+# Build and deploy both profiles to Cloud Run on merge to main.
 #
 # Authenticates with Workload Identity Federation rather than a service account key:
 # GitHub mints a short-lived OIDC token, GCP exchanges it for credentials, and nothing
@@ -25,7 +25,6 @@ concurrency:
 env:
   PROJECT: vizij-retico
   REGION: us-central1
-  PROFILE: lite
 
 jobs:
   deploy:
@@ -33,9 +32,29 @@ jobs:
     permissions:
       contents: read
       id-token: write # required to mint the OIDC token for WIF
+    strategy:
+      # Both profiles are independent services. A `full` failure must not stop `lite`
+      # from shipping — lite is the link people are given.
+      fail-fast: false
+      matrix:
+        profile: [lite, full]
 
+    name: deploy (${{ matrix.profile }})
     steps:
       - uses: actions/checkout@v4
+
+      # `full` is ~4 GB compressed and roughly 10-12 GB unpacked, against a stock runner's
+      # ~14 GB of free space. Reclaiming the preinstalled toolchains we never use buys
+      # ~25 GB, which is the difference between this building and dying on ENOSPC
+      # two-thirds of the way through a 20 minute build.
+      - name: Reclaim disk
+        if: matrix.profile == 'full'
+        run: |
+          df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android \
+                      /usr/local/share/boost /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af
+          df -h / | tail -1
 
       - id: auth
         uses: google-github-actions/auth@v2
@@ -54,12 +73,13 @@ jobs:
       # holds serviceUsageConsumer and the identical call succeeds under direct
       # impersonation. Not uploading a source tarball sidesteps the whole interaction.
       #
-      # cloudbuild.yaml stays for the `full` profile, which needs more disk and RAM than a
-      # standard runner has.
+      # cloudbuild.yaml remains for building by hand on a bigger machine.
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
 
       - name: Build and push
+        env:
+          PROFILE: ${{ matrix.profile }}
         run: |
           IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/vizij/vizij-retico"
           docker build \
@@ -71,16 +91,24 @@ jobs:
           docker push "${IMAGE}:${PROFILE}-${GITHUB_SHA}"
 
       - name: Deploy
+        env:
+          PROFILE: ${{ matrix.profile }}
         run: PROJECT="$PROJECT" REGION="$REGION" PROFILE="$PROFILE" ./scripts/deploy.sh
 
       # A deploy that returns a URL but serves errors is still a failed deploy.
       - name: Smoke test
+        env:
+          PROFILE: ${{ matrix.profile }}
         run: |
-          URL=$(gcloud run services describe vizij-retico \
+          # deploy.sh names lite "vizij-retico" and everything else "vizij-retico-<profile>".
+          if [ "$PROFILE" = "lite" ]; then SERVICE=vizij-retico; else SERVICE="vizij-retico-$PROFILE"; fi
+          URL=$(gcloud run services describe "$SERVICE" \
                   --project "$PROJECT" --region "$REGION" --format='value(status.url)')
           echo "deployed: $URL"
-          code=$(curl -s -o /dev/null -w '%{http_code}' --retry 5 --retry-delay 5 \
-                   --retry-all-errors "$URL/health")
+          # `full` cold-starts behind multi-GB of model weights, so allow longer than the
+          # default before calling it a failed deploy.
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 180 \
+                   --retry 8 --retry-delay 10 --retry-all-errors "$URL/health")
           echo "GET /health -> $code"
           test "$code" = "200"
-          echo "$URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ${PROFILE}: $URL" >> "$GITHUB_STEP_SUMMARY"
