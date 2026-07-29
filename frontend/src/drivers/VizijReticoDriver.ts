@@ -283,6 +283,8 @@ export function createReticoDriver(
     // Viseme lip-sync: only one viseme pose is raised at a time, so the mouth can't
     // smear into a blend of every phoneme in the utterance.
     let activeViseme: string | null = null;
+    // Set by the utterance currently playing so a barge-in can cut it off mid-sentence.
+    let stopCurrentSpeech: (() => void) | null = null;
     const setViseme = (poseId: string | null) => {
       if (poseId === activeViseme) return;
       if (activeViseme) animRig(visemePosePath(activeViseme), 0, LIPSYNC.visemeFadeMs);
@@ -314,6 +316,7 @@ export function createReticoDriver(
       const finish = () => {
         if (finished) return;
         finished = true;
+        stopCurrentSpeech = null;
         cancelAnimationFrame(raf);
         window.clearTimeout(guard);
         setViseme(null); // release the last phoneme
@@ -347,11 +350,25 @@ export function createReticoDriver(
       const guard = window.setTimeout(finish, lastMark + 1500);
       pump();
 
+      let source: AudioBufferSourceNode | null = null;
+      stopCurrentSpeech = () => {
+        // Stop the audio first, then run the normal teardown so the mouth closes and the
+        // viseme timeline is released — otherwise the face keeps mouthing a sentence the
+        // user can no longer hear.
+        try {
+          source?.stop();
+        } catch {
+          /* already stopped or never started */
+        }
+        finish();
+      };
+
       void (async () => {
         try {
           if (!audioCtx) audioCtx = new AudioContext();
           const buf = await audioCtx.decodeAudioData(base64ToArrayBuffer(e.payload.data));
           const src = audioCtx.createBufferSource();
+          source = src;
           src.buffer = buf;
           analyser = audioCtx.createAnalyser();
           analyser.fftSize = 512;
@@ -388,6 +405,11 @@ export function createReticoDriver(
           return onSpeech(e);
         case "speech.end":
           return scheduleEmotionRelease();
+        case "speech.cancel":
+          // The user interrupted. The backend has already dropped the queued clauses;
+          // this stops the one already in the browser.
+          stopCurrentSpeech?.();
+          return;
         default:
           return;
       }

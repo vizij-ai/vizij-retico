@@ -41,9 +41,13 @@ class WebSocketHub:
 
         # Audio format most recently advertised by a client (browser capture).
         self.audio_rate = 16000
-        # Monotonic deadline until which the agent is still speaking; the ASR gate
-        # drops transcripts before it so the agent does not answer its own voice.
+        # What the agent is currently saying, so the ASR gate can recognise its own voice
+        # coming back through the microphone. Text rather than a mute window: a window
+        # blocks barge-in and has to be guessed from a dispatch-time duration estimate,
+        # which was wrong in both directions. See echo.py.
         self.speaking_until = 0.0
+        self._spoken: list[tuple[float, str]] = []
+        self._spoken_lock = threading.Lock()
         # Voice id for the active TTS provider (a Polly voice name, or a gTTS accent).
         self.voice = ""
         self.audio_width = 2  # bytes/sample (s16le)
@@ -77,6 +81,42 @@ class WebSocketHub:
         # Descriptor of the active pipeline stages (set by the network); sent in hello so
         # the debug pipeline preview can show what's wired.
         self.pipeline: dict[str, Any] = {}
+
+    # ---- speaking state (for echo rejection / barge-in) ------------------
+
+    # How long a clause stays in the echo-comparison window after it was spoken. Echo can
+    # arrive later than playback: the recognizer needs its own endpointing time (~0.7 s
+    # measured) on top of room reverb, so a transcript of our own voice can land seconds
+    # after we stopped. Generous, because keeping stale text only risks a missed barge-in,
+    # while dropping it too early lets the agent answer itself.
+    SPOKEN_WINDOW_SECONDS = 12.0
+
+    def note_speaking(self, text: str, duration: float) -> None:
+        """Record a clause the agent is about to speak, and extend the speaking deadline."""
+        now = time.monotonic()
+        with self._spoken_lock:
+            # Extend from whichever is later. Clauses are synthesized ahead of playback,
+            # so `now + duration` alone would end the window before the browser has
+            # finished the previous clause.
+            self.speaking_until = max(self.speaking_until, now) + duration
+            self._spoken.append((now, text))
+            cutoff = now - self.SPOKEN_WINDOW_SECONDS
+            self._spoken = [(t, s) for t, s in self._spoken if t >= cutoff]
+
+    def recent_spoken(self) -> str:
+        now = time.monotonic()
+        with self._spoken_lock:
+            cutoff = now - self.SPOKEN_WINDOW_SECONDS
+            return " ".join(s for t, s in self._spoken if t >= cutoff)
+
+    def is_speaking(self) -> bool:
+        return time.monotonic() < self.speaking_until
+
+    def stop_speaking(self) -> None:
+        """Barge-in: abandon what we were saying and stop comparing against it."""
+        with self._spoken_lock:
+            self.speaking_until = 0.0
+            self._spoken = []
 
     def _pipeline_snapshot(self) -> dict:
         """The pipeline descriptor with a freshly computed provider registry.

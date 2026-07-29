@@ -56,44 +56,72 @@ class AsrGate(retico_core.AbstractModule):
     def __init__(
         self,
         get_source: Callable[[], str],
-        speaking_until: Optional[Callable[[], float]] = None,
+        is_speaking: Optional[Callable[[], bool]] = None,
+        recent_spoken: Optional[Callable[[], str]] = None,
+        on_barge_in: Optional[Callable[[], None]] = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self.get_source = get_source
-        # Returns the monotonic time until which the agent is still speaking.
-        self.speaking_until = speaking_until or (lambda: 0.0)
-        self._suppressed = 0
+        self.is_speaking = is_speaking or (lambda: False)
+        self.recent_spoken = recent_spoken or (lambda: "")
+        self.on_barge_in = on_barge_in
+        self._echoes = 0
+
+    @staticmethod
+    def _utterance_text(ius) -> str:
+        """Reconstruct what this message says, for the echo comparison.
+
+        A COMMIT carries the whole utterance; otherwise the ADDs are the words of the
+        current hypothesis. Either way we judge the message as a unit.
+        """
+        for iu, ut in ius:
+            if ut == retico_core.UpdateType.COMMIT:
+                return getattr(iu, "get_text", lambda: "")() or ""
+        return " ".join(
+            (getattr(iu, "get_text", lambda: "")() or "")
+            for iu, ut in ius
+            if ut == retico_core.UpdateType.ADD
+        )
 
     def process_update(self, update_message):
+        from .echo import is_echo
+
         active = self.get_source()
-        # The microphone hears the agent's own voice coming out of the speakers, and the
-        # server-side ASRs transcribe it happily — the agent then answers itself, which
-        # can sustain indefinitely. Browser echo cancellation reduces this but does not
-        # remove it, especially on external speakers. Drop transcripts produced while we
-        # are talking. (Cost: no barge-in. Interrupting the agent mid-sentence will not
-        # register until it finishes — the right trade until there is real AEC, because
-        # the failure it prevents is a runaway loop.)
-        muted = time.monotonic() < self.speaking_until()
-        out = retico_core.UpdateMessage()
-        forwarded = 0
-        for iu, ut in update_message:
-            # Simulated turns (debug harness) always pass, whichever source is active
-            # and even while speaking — the harness is how the pipeline gets tested.
-            if getattr(iu, "simulated", False):
+        items = list(update_message)
+
+        # Simulated turns (debug harness) always pass, whichever source is active and even
+        # while speaking — the harness is how the pipeline gets tested.
+        if any(getattr(iu, "simulated", False) for iu, _ in items):
+            out = retico_core.UpdateMessage()
+            for iu, ut in items:
                 out.add_iu(iu, ut)
-                forwarded += 1
-                continue
-            if source_of(iu) != active:
-                continue  # the inactive ASR is still running; drop its output
-            if muted:
-                self._suppressed += 1
-                if self._suppressed % 25 == 1:
-                    print(f"[asr] suppressed while speaking (n={self._suppressed})")
-                continue
+            return out
+
+        items = [(iu, ut) for iu, ut in items if source_of(iu) == active]
+        if not items:
+            return None  # the inactive ASR is still running; drop its output
+
+        # Decide for the whole message, never per-IU. Dropping a COMMIT while letting its
+        # ADDs through leaves the downstream accumulator holding words it will never be
+        # told to clear, and they get prepended to the user's next turn.
+        if self.is_speaking():
+            heard = self._utterance_text(items)
+            if is_echo(heard, self.recent_spoken()):
+                self._echoes += 1
+                if self._echoes % 25 == 1:
+                    print(f"[asr] ignored own voice (n={self._echoes}): {heard[:60]!r}")
+                return None
+            # Not our words — the user is talking over us. That is an interruption, and
+            # it should stop the agent rather than be queued behind it.
+            if self.on_barge_in is not None:
+                print(f"[asr] barge-in: {heard[:60]!r}")
+                self.on_barge_in()
+
+        out = retico_core.UpdateMessage()
+        for iu, ut in items:
             out.add_iu(iu, ut)
-            forwarded += 1
-        return out if forwarded else None
+        return out
 
 
 class AsrSwitcher:

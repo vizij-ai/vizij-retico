@@ -110,15 +110,15 @@ def make_say_handler(hub: WebSocketHub, framer: EventFramer) -> Callable[[str], 
             )
         )
         hub.broadcast(framer.frame("speech.end", {"utteranceId": utterance_id}))
-        # Mark the floor as ours until the utterance has finished playing, so the ASR
-        # gate can drop what the mic hears in the meantime — which is mostly us. Note
-        # `speech.end` above means "dispatched", not "finished playing", so it cannot be
-        # used for this; the duration has to be estimated. Visemes give the real length
-        # when Polly produced them; otherwise fall back to a speaking-rate estimate.
+        # Record what we are saying so the ASR gate can recognise it coming back through
+        # the microphone (see echo.py). The duration only decides how long we consider
+        # ourselves "still speaking" — the actual echo test is on the text, so an
+        # inaccurate estimate no longer swallows the user's turn. Visemes give the real
+        # length when Polly produced them; otherwise use a speaking-rate estimate.
         if visemes:
             spoken = visemes[-1].get("time", 0) / 1000.0
         else:
             spoken = len(text) / CHARS_PER_SECOND
-        hub.speaking_until = time.monotonic() + spoken + SPEECH_TAIL_SECONDS
+        hub.note_speaking(text, spoken + SPEECH_TAIL_SECONDS)
 
     return say

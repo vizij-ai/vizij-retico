@@ -77,8 +77,21 @@ def _build_lite(hub: WebSocketHub, framer: EventFramer):
     from .google_asr import GoogleASRModule
     from .web_input import WebInputModule
 
-    gate = AsrGate(get_source=lambda: hub.asr_source,
-                    speaking_until=lambda: hub.speaking_until)
+    def _barge_in() -> None:
+        # The user started talking over us: stop mid-sentence rather than finishing and
+        # replying afterwards. Drop queued clauses, tell the browser to stop playback,
+        # and clear the speaking state so the interrupting turn is not itself mistaken
+        # for echo.
+        tts.cancel()
+        hub.stop_speaking()
+        hub.broadcast(framer.frame("speech.cancel", {"reason": "barge-in"}))
+
+    gate = AsrGate(
+        get_source=lambda: hub.asr_source,
+        is_speaking=hub.is_speaking,
+        recent_spoken=hub.recent_spoken,
+        on_barge_in=_barge_in,
+    )
     browser_asr = BrowserASRModule(hub)
     browser_asr.subscribe(gate)
 
@@ -197,8 +210,21 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
 
     from .google_asr import GoogleASRModule
 
-    gate = AsrGate(get_source=lambda: hub.asr_source,
-                    speaking_until=lambda: hub.speaking_until)
+    def _barge_in() -> None:
+        # The user started talking over us: stop mid-sentence rather than finishing and
+        # replying afterwards. Drop queued clauses, tell the browser to stop playback,
+        # and clear the speaking state so the interrupting turn is not itself mistaken
+        # for echo.
+        tts.cancel()
+        hub.stop_speaking()
+        hub.broadcast(framer.frame("speech.cancel", {"reason": "barge-in"}))
+
+    gate = AsrGate(
+        get_source=lambda: hub.asr_source,
+        is_speaking=hub.is_speaking,
+        recent_spoken=hub.recent_spoken,
+        on_barge_in=_barge_in,
+    )
     browser_asr = BrowserASRModule(hub)  # head producer, fed by the browser via the hub
     browser_asr.subscribe(gate)
     # Google STT reads the same streamed audio the turn-taking models do.

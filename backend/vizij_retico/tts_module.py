@@ -36,7 +36,12 @@ class TTSModule(retico_core.AbstractConsumingModule):
     def __init__(self, say: Callable[[str], None], **kwargs) -> None:
         super().__init__(**kwargs)
         self.say = say
-        self._queue: "queue.Queue[str]" = queue.Queue()
+        self._queue: "queue.Queue[tuple[int, str]]" = queue.Queue()
+        # Bumped on cancel. Queued clauses carry the generation they were enqueued in, so
+        # anything from a superseded reply is discarded instead of spoken after the
+        # interruption. Cheaper and less racy than draining the queue, which cannot
+        # recall a clause the worker has already taken.
+        self._generation = 0
         self._worker = threading.Thread(target=self._drain, daemon=True)
         self._worker.start()
 
@@ -46,12 +51,23 @@ class TTSModule(retico_core.AbstractConsumingModule):
                 continue  # COMMIT just marks end-of-utterance; nothing extra to speak
             text = (getattr(iu, "text", "") or "").strip()
             if text:
-                self._queue.put(text)
+                self._queue.put((self._generation, text))
         return None
+
+    def cancel(self) -> None:
+        """Abandon everything queued (the user interrupted)."""
+        self._generation += 1
+        while True:
+            try:
+                self._queue.get_nowait()
+            except queue.Empty:
+                break
 
     def _drain(self) -> None:
         while True:
-            text = self._queue.get()
+            generation, text = self._queue.get()
+            if generation != self._generation:
+                continue  # superseded by a barge-in
             try:
                 self.say(text)
             except Exception as exc:  # one bad clause must not kill the worker
