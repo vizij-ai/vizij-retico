@@ -80,6 +80,9 @@ class GoogleASRModule(retico_core.AbstractModule):
         # IUs added for the current utterance and not yet committed; revoked wholesale
         # when a better hypothesis arrives.
         self._live: list = []
+        self._streams = 0
+        # Set when a final result arrives, to tear the stream down and open a fresh one.
+        self._utterance_done = threading.Event()
         # Set when recognition stands down on a permanent error.
         self.error: Optional[str] = None
 
@@ -123,6 +126,10 @@ class GoogleASRModule(retico_core.AbstractModule):
         started = time.time()
         yield speech.StreamingRecognizeRequest(audio_content=first)
         while self._running and (time.time() - started) < _STREAM_LIMIT_SECONDS:
+            if self._utterance_done.is_set():
+                # The utterance ended. Stop feeding so the stream closes and a fresh one
+                # can be opened — see the note in _recognize_forever.
+                return
             try:
                 chunk = self._audio.get(timeout=_CHUNK_TIMEOUT)
             except queue.Empty:
@@ -165,7 +172,16 @@ class GoogleASRModule(retico_core.AbstractModule):
             first = self._await_audio()
             if first is None:
                 break
+            # One stream per utterance. The conversational models ("latest_short") have
+            # single-utterance semantics: once Google detects the endpoint it stops
+            # returning results on that stream — but it does not close it, and the
+            # request generator will happily keep feeding audio into a stream that will
+            # never answer again. That is exactly the "hears you once, then goes deaf"
+            # failure. Tear down on each final result and reconnect; audio continues
+            # accumulating in the queue meanwhile, so nothing is lost across the seam.
+            self._utterance_done.clear()
             try:
+                self._streams += 1
                 responses = client.streaming_recognize(
                     config=streaming_config, requests=self._requests(speech, first)
                 )
@@ -175,10 +191,12 @@ class GoogleASRModule(retico_core.AbstractModule):
                     for result in response.results:
                         if not result.alternatives:
                             continue
-                        self._emit(
-                            result.alternatives[0].transcript.strip(),
-                            bool(result.is_final),
-                        )
+                        final = bool(result.is_final)
+                        self._emit(result.alternatives[0].transcript.strip(), final)
+                        if final:
+                            self._utterance_done.set()
+                    if self._utterance_done.is_set():
+                        break
                 backoff = 0.0  # a clean roll-over is not a failure
             except Exception as exc:
                 if not self._running:
