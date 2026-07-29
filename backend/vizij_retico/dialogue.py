@@ -208,7 +208,7 @@ class LLMModule(retico_core.AbstractModule):
         base_url: str,
         model: str = "",
         system: str = "",
-        cooldown: float = 3.0,
+        cooldown: float = 0.5,
         gate_on_turn: bool = True,
         max_wait: float = 4.0,
         status: Optional[Callable[[str, str], None]] = None,
@@ -493,7 +493,12 @@ class LLMModule(retico_core.AbstractModule):
                 self.status("spoke", reply)
             # Stay muted for roughly as long as the reply takes to speak, so the agent
             # doesn't answer its own TTS bleeding back through the mic.
-            self._muted_until = time.monotonic() + self.cooldown + len(reply) / 12.0
+            # Just a debounce between turns. It used to add len(reply)/12 to keep from
+            # talking over itself, but that is the speaking-state guard's job now, and
+            # charging it here too muted the agent for 15 s after a normal reply (170 s
+            # after a long one) — during which a second user turn was silently dropped,
+            # because _enqueue overwrites _pending rather than queueing.
+            self._muted_until = time.monotonic() + self.cooldown
         except Exception as exc:
             print(f"[llm] error: {exc}")
         finally:

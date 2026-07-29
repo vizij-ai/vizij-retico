@@ -81,6 +81,8 @@ class GoogleASRModule(retico_core.AbstractModule):
         # when a better hypothesis arrives.
         self._live: list = []
         self._streams = 0
+        # Identifies the stream currently allowed to read self._audio.
+        self._stream_token: object = object()
         # Set when a final result arrives, to tear the stream down and open a fresh one.
         self._utterance_done = threading.Event()
         # Set when recognition stands down on a permanent error.
@@ -119,13 +121,23 @@ class GoogleASRModule(retico_core.AbstractModule):
                 continue
         return None
 
-    def _requests(self, speech, first: bytes):
-        """Yield audio chunks until the stream should roll over or the mic goes away."""
+    def _requests(self, speech, first: bytes, token: object):
+        """Yield audio chunks for one stream, identified by `token`.
+
+        `token` rather than a shared flag, because a shared flag races: the outgoing
+        generator only notices it should stop by polling, and the outer loop resets the
+        flag for the *next* stream before the old generator has necessarily looked. The
+        old generator then saw a cleared flag, concluded it was still current, and went on
+        pulling from the same queue — two readers, each getting about half the audio.
+        A token can only ever match one stream, so a superseded generator always exits.
+        """
         import time
 
         started = time.time()
         yield speech.StreamingRecognizeRequest(audio_content=first)
         while self._running and (time.time() - started) < _STREAM_LIMIT_SECONDS:
+            if self._stream_token is not token:
+                return  # superseded by a newer stream
             if self._utterance_done.is_set():
                 # The utterance ended. Stop feeding so the stream closes and a fresh one
                 # can be opened — see the note in _recognize_forever.
@@ -163,12 +175,36 @@ class GoogleASRModule(retico_core.AbstractModule):
             enable_automatic_punctuation=True,
             model=CONFIG.google_asr_model or None,
         )
+        # Voice-activity events give us SPEECH_ACTIVITY_BEGIN, which is the earliest
+        # signal that the user has started talking — that is what barge-in keys off.
+        #
+        # They do NOT reduce endpointing latency, which was the original hope. Measured
+        # against this project: SPEECH_ACTIVITY_END and the final result arrive within
+        # 10 ms of each other, both ~0.68 s after the audio actually stops. Google
+        # finalizes the instant it decides speech ended, so there is nothing to win by
+        # reacting to the event instead.
+        #
+        # `voice_activity_timeout` (which *would* shorten that 0.68 s) is rejected with
+        # 400 INVALID_ARGUMENT on the v1 API in every combination tried, with and without
+        # the events flag and with every model. Shortening endpointing needs either the
+        # v2 API, which supports speech_end_timeout properly, or client-side endpointing
+        # off the interim results plus our own energy gate. Both are follow-ups.
         streaming_config = speech.StreamingRecognitionConfig(
-            config=config, interim_results=True
+            config=config,
+            interim_results=True,
+            enable_voice_activity_events=True,
         )
 
         backoff = 0.0
         while self._running:
+            # Claim the audio queue for the stream we are about to open, and clear the
+            # end-of-utterance flag, *before* blocking on _await_audio(). Doing either
+            # afterwards leaves a window in which the previous stream's generator is
+            # still reading the same queue.
+            token = object()
+            self._stream_token = token
+            self._utterance_done.clear()
+
             first = self._await_audio()
             if first is None:
                 break
@@ -179,11 +215,12 @@ class GoogleASRModule(retico_core.AbstractModule):
             # never answer again. That is exactly the "hears you once, then goes deaf"
             # failure. Tear down on each final result and reconnect; audio continues
             # accumulating in the queue meanwhile, so nothing is lost across the seam.
-            self._utterance_done.clear()
+            responses = None
             try:
                 self._streams += 1
                 responses = client.streaming_recognize(
-                    config=streaming_config, requests=self._requests(speech, first)
+                    config=streaming_config,
+                    requests=self._requests(speech, first, token),
                 )
                 for response in responses:
                     if not self._running:
@@ -221,6 +258,14 @@ class GoogleASRModule(retico_core.AbstractModule):
                 backoff = min(_MAX_BACKOFF, (backoff * 2) or 1.0)
                 print(f"[google-asr] stream ended ({kind}); retrying in {backoff:.0f}s")
                 time.sleep(backoff)
+            finally:
+                # Breaking out of the response loop does not end the RPC — without this
+                # the call stays open and its request generator keeps being pumped.
+                if responses is not None:
+                    try:
+                        responses.cancel()
+                    except Exception:
+                        pass
 
     def _emit(self, text: str, final: bool) -> None:
         if not text:
