@@ -51,6 +51,10 @@ class Config:
     # Empty => let the service pick. "latest_short" suits conversational turns.
     google_asr_model: str = os.environ.get("GOOGLE_ASR_MODEL", "latest_short")
 
+    # Google Cloud TTS — the keyless default. Same ADC as Vertex and Cloud STT.
+    google_tts_project: str = os.environ.get("GOOGLE_TTS_PROJECT", "")
+    google_tts_voice: str = os.environ.get("GOOGLE_TTS_VOICE", "en-US-Neural2-F")
+
     # Vertex AI: the same Gemini models and the same OpenAI protocol, but billed to the
     # project's ordinary Cloud billing account rather than AI Studio prepayment credits,
     # and authenticated with ADC instead of an API key — so a Cloud Run deployment needs
@@ -70,8 +74,9 @@ class Config:
         "short, natural spoken sentences. No emojis or markdown.",
     )
 
-    # TTS provider ("gtts" | "polly"). Polly also gives phoneme-timed visemes.
-    tts_provider: str = os.environ.get("TTS_PROVIDER", "gtts")
+    # TTS provider ("google" | "gtts" | "polly"). Cloud TTS is the keyless default;
+    # Polly is the only one that returns phoneme-timed visemes.
+    tts_provider: str = os.environ.get("TTS_PROVIDER", "google")
     polly_voice: str = os.environ.get("POLLY_VOICE", "Joanna")
 
 

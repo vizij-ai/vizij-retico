@@ -154,11 +154,25 @@ def _vertex_provider() -> Provider:
 
 def tts_providers() -> dict[str, Provider]:
     polly_ok = _has_aws_credentials()
+    from . import google_tts
+
+    gtts_ok, gtts_detail = google_tts.available()
     return {
+        "google": Provider(
+            id="google",
+            label="Google Cloud TTS",
+            note=(
+                f"{gtts_detail}; no key — amplitude lip-sync"
+                if gtts_ok
+                else f"unavailable — {gtts_detail}"
+            ),
+            requires_key=False,  # ADC, same credentials as Vertex and Cloud STT
+            available=gtts_ok,
+        ),
         "gtts": Provider(
             id="gtts",
-            label="gTTS",
-            note="no key; amplitude lip-sync only",
+            label="gTTS (Translate)",
+            note="unofficial endpoint; accents only, amplitude lip-sync",
             available=True,
         ),
         "polly": Provider(
@@ -250,6 +264,18 @@ VOICES: dict[str, list[tuple[str, str]]] = {
         ("Brian", "Brian · UK"),
         ("Olivia", "Olivia · AU"),
         ("Aria", "Aria · NZ"),
+    ],
+    # Cloud TTS Neural2. language_code is derived from the name, so these must be real
+    # voice ids, not labels.
+    "google": [
+        ("en-US-Neural2-F", "US · warm female"),
+        ("en-US-Neural2-C", "US · bright female"),
+        ("en-US-Neural2-D", "US · male"),
+        ("en-US-Neural2-J", "US · deep male"),
+        ("en-GB-Neural2-A", "UK · female"),
+        ("en-GB-Neural2-B", "UK · male"),
+        ("en-AU-Neural2-A", "AU · female"),
+        ("en-IN-Neural2-A", "India · female"),
     ],
     # gTTS has no voices, only locales — the accent is the only thing you can pick.
     "gtts": [

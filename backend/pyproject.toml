@@ -12,6 +12,7 @@ dependencies = [
     "fastapi>=0.139.2",
     "google-auth>=2.35",
     "google-cloud-speech>=2.27",
+    "google-cloud-texttospeech>=2.17",
     "gtts>=2.5.4",
     "requests>=2.32",
     "retico-core>=2.0.0",

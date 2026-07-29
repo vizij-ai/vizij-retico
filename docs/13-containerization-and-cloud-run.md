@@ -13,7 +13,7 @@ shipping only dialogue would drop the part the paper is actually about.
 | ASR | Google STT (default) or browser | + local Whisper |
 | Turn-taking | none | retico-maai VAP + backchannel + nod |
 | Server-side FER | none (browser MediaPipe) | + EmoNet valence/arousal |
-| LLM / TTS | same in both (Vertex / LM Studio, gTTS / Polly) | same |
+| LLM / TTS | same in both (Vertex / LM Studio · Cloud TTS / gTTS / Polly) | same |
 | torch | no | yes |
 | Image | 630 MB | multi-GB (14m43s to build) |
 | Cloud Run | scales to zero | `--no-cpu-throttling`, still scales to zero |
@@ -152,9 +152,11 @@ Cloud Run runtime service account. Nothing to mint, mount, rotate or leak:
 |---|---|---|
 | LLM | Vertex AI (`gemini-2.5-flash`) | `roles/aiplatform.user` |
 | ASR | Cloud Speech-to-Text | `roles/speech.client` (or `editor`) |
+| TTS | Cloud Text-to-Speech | gated by API enablement (no dedicated role) |
 
 ```bash
-gcloud services enable aiplatform.googleapis.com speech.googleapis.com
+gcloud services enable aiplatform.googleapis.com speech.googleapis.com \
+  texttospeech.googleapis.com
 gcloud projects add-iam-policy-binding PROJECT \
   --member="serviceAccount:PROJECTNUMBER-compute@developer.gserviceaccount.com" \
   --role=roles/aiplatform.user

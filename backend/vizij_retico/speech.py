@@ -1,8 +1,15 @@
 """Text-to-speech for the speaking path (lip-sync-first, no keys).
 
-Synthesizes reply text with gTTS (MP3, no API key; needs internet) and broadcasts
-`speech.audio` + `speech.end` events. The browser plays the audio and drives the
-mouth from its amplitude (this rig has a jaw channel, not phoneme viseme poses).
+Synthesizes reply text and broadcasts `speech.audio` + `speech.end` events, which the
+browser plays and drives the mouth from. Three providers, chosen at runtime:
+
+- google — Cloud TTS neural voices, ADC (no key). The default.
+- polly  — the only one returning phoneme-timed visemes, so real lip-sync.
+- gtts   — the Google Translate endpoint. No credentials at all, so it is the floor
+           every other provider falls back to when it fails mid-utterance.
+
+Only Polly supplies speech marks; the other two leave `visemes` empty and the driver
+falls back to amplitude lip-sync.
 """
 
 from __future__ import annotations
@@ -72,6 +79,14 @@ def make_say_handler(hub: WebSocketHub, framer: EventFramer) -> Callable[[str], 
                     # Never lose the utterance to a TTS outage — say it with gTTS and
                     # fall back to amplitude lip-sync.
                     print(f"[tts] polly failed ({exc}); falling back to gTTS")
+                    mp3 = synthesize_mp3(text)
+            elif provider == "google":
+                from . import google_tts
+
+                try:
+                    mp3 = google_tts.synthesize_mp3(text, getattr(hub, "voice", "") or None)
+                except Exception as exc:
+                    print(f"[tts] cloud tts failed ({exc}); falling back to gTTS")
                     mp3 = synthesize_mp3(text)
             else:
                 mp3 = synthesize_mp3(text, _gtts_lang(getattr(hub, "voice", "") or "en"))

@@ -318,7 +318,12 @@ def start(mode: str = "fake") -> RunningNetwork:
         hub.asr_source = wanted if (spec and spec.available) else "browser"
         if hub.asr_source != wanted:
             print(f"[asr] {wanted} unavailable, starting on browser")
-    hub.tts_provider = CONFIG.tts_provider
+    # Fall back if the configured TTS can't run here (Cloud TTS needs ADC), the same
+    # way the ASR default does — gTTS always works, so it is the floor.
+    _tts = providers.get('tts', CONFIG.tts_provider)
+    hub.tts_provider = CONFIG.tts_provider if (_tts and _tts.available) else 'gtts'
+    if hub.tts_provider != CONFIG.tts_provider:
+        print(f"[tts] {CONFIG.tts_provider} unavailable, using gtts")
     providers.set_active_tts(CONFIG.tts_provider)
     hub.voice = providers.default_voice(CONFIG.tts_provider)
     hub.fer_source = CONFIG.fer_source
