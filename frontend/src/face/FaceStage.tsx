@@ -171,9 +171,17 @@ function ReticoBridge({
         return;
       }
       if (e.type === "provider.state") {
-        const { kind, id, state, detail } = e.payload;
+        const { kind, id, state, detail, providers, active } = e.payload;
         if (state === "active") {
-          setActiveProviders((p) => ({ ...p, [kind]: id }));
+          // Take the whole registry when the backend sends it, not just the one kind.
+          // Some kinds are derived from others — the voice list is rebuilt from the
+          // active TTS, the model list from the active LLM — so patching a single key
+          // leaves those dropdowns showing the *previous* provider's options. That is
+          // why selecting Polly never produced Polly voices.
+          if (providers) {
+            setPipeline((p) => (p ? { ...p, providers } : p));
+          }
+          setActiveProviders((p) => ({ ...p, ...(active ?? {}), [kind]: id }));
           setAsrNotice(null);
         } else if (state === "unavailable") {
           setAsrNotice(`${kind}: ${id} unavailable${detail ? ` — ${detail}` : ""}`);
@@ -183,7 +191,12 @@ function ReticoBridge({
       // Record client-side arrival time per event type for the pipeline "active" glow.
       activityRef.current[e.type] = Date.now();
       if (e.type === "dialogue.state") {
-        setDialogue({ state: e.payload.state, text: e.payload.text ?? "" });
+        setDialogue({
+          state: e.payload.state,
+          text: e.payload.text ?? "",
+          model: e.payload.model,
+          timing: e.payload.timing,
+        });
         return; // dialogue.state is pipeline telemetry, not a face-driving event
       }
       if (e.type === "asr.source") {

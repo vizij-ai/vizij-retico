@@ -28,7 +28,13 @@ export type PipelineInfo = {
   providers?: ProviderRegistry;
 } | null;
 
-export type DialogueState = { state: string; text: string } | null;
+export type DialogueState = {
+  state: string;
+  text: string;
+  /** Set on "spoke": which model answered and how long each stage took. */
+  model?: string;
+  timing?: { first_token?: number; first_clause?: number; total?: number };
+} | null;
 
 type Row = {
   key: string;
@@ -207,28 +213,35 @@ export function PipelinePanel({
     });
   }
 
-  if (maai) {
-    rows.push({
-      key: "llm",
-      depth: 0,
-      icon: "🧠",
-      name: "LLM dialogue",
-      wired: `${providerLabel("llm") ?? p.llm?.model ?? "?"}${
-        p.llm?.gated_on_turn ? " · gated on turn" : ""
-      }`,
-      note: "receives the transcript, whichever ASR produced it",
-      activeKeys: ["dialogue.state"],
-      value: !dialogue
-        ? "idle"
-        : dialogue.state === "waiting_for_turn"
-          ? "⏳ waiting for the floor…"
-          : dialogue.state === "thinking"
-            ? "💭 thinking…"
-            : dialogue.state === "spoke"
-              ? `→ “${dialogue.text}”`
-              : dialogue.state,
-    });
-  }
+  // Always shown: the LLM stage exists in both profiles, and this row carries the
+  // per-turn latency readout used to compare models.
+  rows.push({
+    key: "llm",
+    depth: 0,
+    icon: "🧠",
+    name: "LLM dialogue",
+    wired: `${providerLabel("llm") ?? p.llm?.model ?? "?"}${
+      p.llm?.gated_on_turn ? " · gated on turn" : ""
+    }`,
+    // Per-turn latency, so switching model in the picker can be judged on numbers.
+    note: dialogue?.timing?.first_token
+      ? `${dialogue.model ?? "?"} · first token ${dialogue.timing.first_token.toFixed(2)}s` +
+        (dialogue.timing.first_clause
+          ? ` · first clause ${dialogue.timing.first_clause.toFixed(2)}s`
+          : "") +
+        (dialogue.timing.total ? ` · total ${dialogue.timing.total.toFixed(2)}s` : "")
+      : "receives the transcript, whichever ASR produced it",
+    activeKeys: ["dialogue.state"],
+    value: !dialogue
+      ? "idle"
+      : dialogue.state === "waiting_for_turn"
+        ? "⏳ waiting for the floor…"
+        : dialogue.state === "thinking"
+          ? "💭 thinking…"
+          : dialogue.state === "spoke"
+            ? `→ “${dialogue.text}”`
+            : dialogue.state,
+  });
 
   rows.push({
     key: "tts",

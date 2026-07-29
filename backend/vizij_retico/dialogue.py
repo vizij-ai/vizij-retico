@@ -101,7 +101,7 @@ def chat_stream(
     model: str,
     messages: list[dict],
     timeout: float = 60.0,
-    max_tokens: int = 300,
+    max_tokens: int = 160,
     api_key: str = "",
     extra_body: Optional[dict] = None,
 ):
@@ -149,7 +149,7 @@ def chat(
     model: str,
     messages: list[dict],
     timeout: float = 60.0,
-    max_tokens: int = 300,
+    max_tokens: int = 160,
     api_key: str = "",
     extra_body: Optional[dict] = None,
 ) -> str:
@@ -210,12 +210,16 @@ class LLMModule(retico_core.AbstractModule):
         system: str = "",
         cooldown: float = 0.5,
         gate_on_turn: bool = True,
-        max_wait: float = 4.0,
-        status: Optional[Callable[[str, str], None]] = None,
+        # A flat 4 s was spent on every turn whenever VAP did not emit
+        # agent_should_speak. This is a backstop, not a normal path.
+        max_wait: float = 1.0,
+        status: Optional[Callable[..., None]] = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self.provider_id = ""
+        # Latency of the current turn, reported with the 'spoke' status.
+        self.timing: dict = {}
         self._last_out = None  # previous outgoing IU, for the incremental chain
         self.api_key = ""
         # "key" = static bearer from settings; "adc" = short-lived Google token minted per
@@ -419,6 +423,7 @@ class LLMModule(retico_core.AbstractModule):
         spoken: list[str] = []
         looking_for_tag = True
         self._affect = None  # each turn gets its own reading
+        started = time.monotonic()
         for piece in chat_stream(
             self.base_url,
             self._model or "",
@@ -426,6 +431,8 @@ class LLMModule(retico_core.AbstractModule):
             api_key=self._bearer(),
             extra_body=self.extra_body,
         ):
+            if self.timing.get("first_token") is None:
+                self.timing["first_token"] = time.monotonic() - started
             buffer += piece
             if looking_for_tag:
                 match = _AFFECT_TAG.match(buffer)
@@ -445,6 +452,8 @@ class LLMModule(retico_core.AbstractModule):
                 clause = clean_reply(buffer[:cut])
                 buffer = buffer[cut:]
                 if clause:
+                    if not spoken:
+                        self.timing["first_clause"] = time.monotonic() - started
                     self._emit_clause(clause, first=not spoken)
                     spoken.append(clause)
         tail = clean_reply(buffer)
@@ -455,6 +464,10 @@ class LLMModule(retico_core.AbstractModule):
 
     def _reply(self, text: str) -> None:
         try:
+            # Per-turn latency, surfaced to the UI so model choices can be compared on
+            # numbers rather than impressions.
+            self.timing = {"first_token": None, "first_clause": None}
+            turn_started = time.monotonic()
             if self.status is not None:
                 self.status("thinking", text)
             if self._model is None:
@@ -490,7 +503,12 @@ class LLMModule(retico_core.AbstractModule):
             self._commit_reply()
             self._history.append({"role": "assistant", "content": reply})
             if self.status is not None:
-                self.status("spoke", reply)
+                self.timing["total"] = time.monotonic() - turn_started
+                self.status("spoke", reply, {
+                    "model": (self._model or "").split("/")[-1],
+                    "timing": {k: (round(v, 3) if isinstance(v, float) else v)
+                               for k, v in self.timing.items()},
+                })
             # Stay muted for roughly as long as the reply takes to speak, so the agent
             # doesn't answer its own TTS bleeding back through the mic.
             # Just a debounce between turns. It used to add len(reply)/12 to keep from

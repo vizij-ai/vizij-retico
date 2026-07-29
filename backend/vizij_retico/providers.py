@@ -106,6 +106,53 @@ def llm_providers() -> dict[str, Provider]:
     }
 
 
+# Gemini models selectable at runtime, as (id, label, location).
+#
+# The location is part of the choice, not a separate setting: gemini-3.5-flash-lite is
+# served only from `global` and 404s in us-central1, so picking the model necessarily
+# picks where it runs. That matters for latency — measured from a laptop, the `global`
+# endpoint's routing cost more than the newer model saved, but the service runs in
+# us-central1 so the in-region numbers are the ones that decide. Hence the picker.
+VERTEX_MODELS: list[tuple[str, str, str]] = [
+    ("gemini-2.5-flash-lite", "2.5 Flash Lite · us-central1", "us-central1"),
+    ("gemini-3.5-flash-lite", "3.5 Flash Lite · global", "global"),
+    ("gemini-2.5-flash", "2.5 Flash · us-central1", "us-central1"),
+]
+
+
+def vertex_base_url(project: str, location: str) -> str:
+    """OpenAI-compat base URL for a Vertex location.
+
+    `global` is not a region: its host has no location prefix. Building the URL as
+    f"{location}-aiplatform..." unconditionally yields `global-aiplatform...`, which does
+    not resolve — so the newer models, which are global-only, were unreachable.
+    """
+    host = (
+        "https://aiplatform.googleapis.com"
+        if location == "global"
+        else f"https://{location}-aiplatform.googleapis.com"
+    )
+    return f"{host}/v1beta1/projects/{project}/locations/{location}/endpoints/openapi"
+
+
+def model_providers() -> dict[str, Provider]:
+    """Which Gemini model the Vertex provider uses. Only meaningful when llm=vertex."""
+    from . import gcp_auth
+
+    ok, _ = gcp_auth.available()
+    project = CONFIG.vertex_project or (gcp_auth.project() if ok else "")
+    return {
+        mid: Provider(
+            id=mid,
+            label=label,
+            note=f"{location}{'' if project else ' · no credentials'}",
+            available=bool(project),
+            settings={"model": f"google/{mid}", "location": location},
+        )
+        for mid, label, location in VERTEX_MODELS
+    }
+
+
 def _vertex_provider() -> Provider:
     """Gemini via Vertex AI — the only Gemini path.
 
@@ -122,16 +169,18 @@ def _vertex_provider() -> Provider:
     project = CONFIG.vertex_project or (gcp_auth.project() if ok else "")
     if not project:
         ok = False
-    location = CONFIG.vertex_location
-    base_url = (
-        f"https://{location}-aiplatform.googleapis.com/v1beta1"
-        f"/projects/{project}/locations/{location}/endpoints/openapi"
-    )
+    # The active model carries its own location (3.5-flash-lite is global-only).
+    bare = _ACTIVE_MODEL or CONFIG.vertex_model.split("/")[-1]
+    location = _model_location(bare) or CONFIG.vertex_location
+    # The OpenAI-compat surface wants the publisher prefix; _ACTIVE_MODEL holds the bare
+    # id so it can be matched against VERTEX_MODELS and shown in the picker.
+    model = f"google/{bare}"
+    base_url = vertex_base_url(project, location)
     return Provider(
         id="vertex",
         label="Gemini (Vertex AI)",
         note=(
-            f"{CONFIG.vertex_model} · {project} · Cloud billing"
+            f"{bare} · {location} · Cloud billing"
             if ok
             else f"no credentials — {detail}"
         ),
@@ -139,7 +188,7 @@ def _vertex_provider() -> Provider:
         available=ok,
         settings={
             "base_url": base_url,
-            "model": CONFIG.vertex_model,
+            "model": model,
             "api_key": "",
             "auth": "adc",
             "system_suffix": "",
@@ -291,6 +340,23 @@ VOICES: dict[str, list[tuple[str, str]]] = {
 # parameter because the registry factories take no arguments, and rather than reaching
 # into the hub because providers.py must not depend on it.
 _ACTIVE_TTS = CONFIG.tts_provider
+# Selected Gemini model, as a bare id ("gemini-2.5-flash-lite"). Same pattern as
+# _ACTIVE_TTS: the registry factories take no arguments, and providers.py must not
+# depend on the hub.
+_ACTIVE_MODEL = CONFIG.vertex_model.split("/")[-1]
+
+
+def set_active_model(model_id: str) -> None:
+    global _ACTIVE_MODEL
+    _ACTIVE_MODEL = model_id.split("/")[-1]
+
+
+def _model_location(model_id: str) -> str:
+    bare = model_id.split("/")[-1]
+    for mid, _label, location in VERTEX_MODELS:
+        if mid == bare:
+            return location
+    return ""
 
 
 def set_active_tts(provider_id: str) -> None:
@@ -350,6 +416,7 @@ def turn_providers() -> dict[str, Provider]:
 REGISTRY = {
     "asr": asr_providers,
     "turn": turn_providers,
+    "model": model_providers,
     "voice": voice_providers,
     "fer": fer_providers,
     "llm": llm_providers,

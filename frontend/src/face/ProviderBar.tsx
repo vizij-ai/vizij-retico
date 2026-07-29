@@ -13,6 +13,7 @@ const KIND_LABEL: Record<string, string> = {
   llm: "llm",
   tts: "tts",
   turn: "floor",
+  model: "model",
 };
 
 export function ProviderBar({

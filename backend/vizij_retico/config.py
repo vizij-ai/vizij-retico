@@ -62,7 +62,10 @@ class Config:
     vertex_project: str = os.environ.get("VERTEX_PROJECT", "")
     vertex_location: str = os.environ.get("VERTEX_LOCATION", "us-central1")
     # The OpenAI-compat surface wants the publisher prefix.
-    vertex_model: str = os.environ.get("VERTEX_MODEL", "google/gemini-2.5-flash")
+    # flash-lite measured ~2x faster to first token than flash, and beat
+    # 3.5-flash-lite because that one is global-only and the routing costs more
+    # than the newer model saves. Switchable at runtime from the model picker.
+    vertex_model: str = os.environ.get("VERTEX_MODEL", "google/gemini-2.5-flash-lite")
 
     # Base persona. Provider-specific suffixes (e.g. Qwen3's "/no_think") are appended
     # by the provider spec, so a cloud model never sees a local model's control tokens.

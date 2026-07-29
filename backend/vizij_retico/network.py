@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 
 import retico_core
 
@@ -57,8 +57,11 @@ def _build_lite(hub: WebSocketHub, framer: EventFramer):
     from .dialogue import LLMModule
     from .tts_module import TTSModule
 
-    def _status(state: str, detail: str = "") -> None:
-        hub.broadcast(framer.frame("dialogue.state", {"state": state, "text": detail}))
+    def _status(state: str, detail: str = "", extra: Optional[dict] = None) -> None:
+        payload = {"state": state, "text": detail}
+        if extra:
+            payload.update(extra)  # model + per-turn timing, for the latency readout
+        hub.broadcast(framer.frame("dialogue.state", payload))
 
     llm = LLMModule(
         base_url=CONFIG.llm_base_url,
@@ -142,13 +145,33 @@ def _build_lite(hub: WebSocketHub, framer: EventFramer):
                     {"state": "active", "source": provider_id, "detail": spec.label},
                 )
             )
+        elif kind == "model":
+            # Re-point the LLM at the new model. Its location travels with it, so the
+            # base URL is rebuilt too — 3.5-flash-lite is served only from `global`.
+            providers.set_active_model(provider_id)
+            vertex = providers.get("llm", "vertex")
+            if vertex is not None and hub.active_providers.get("llm") == "vertex":
+                llm.set_provider("vertex", vertex.settings)
         elif kind == "turn":
             llm.set_gating(provider_id == "vap")
         else:
             return
         hub.active_providers[kind] = provider_id
+        # Ship the recomputed registry with the event. Several kinds are *derived* from
+        # others (the voice list follows the active TTS, the model list follows the LLM),
+        # so telling the client only "tts=polly" leaves it rendering the previous
+        # provider's options — which is why Polly voices never appeared.
         hub.broadcast(
-            framer.frame("provider.state", {"kind": kind, "id": provider_id, "state": "active"})
+            framer.frame(
+                "provider.state",
+                {
+                    "kind": kind,
+                    "id": provider_id,
+                    "state": "active",
+                    "providers": providers.describe(hub.active_providers),
+                    "active": dict(hub.active_providers),
+                },
+            )
         )
 
     hub.set_provider_handler = _set_provider
@@ -179,8 +202,11 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
     bc = BackchannelModule(lang="en", frame_rate=10)
     nod = NodPredictionModule(lang="en", frame_rate=10)
     # committed transcript -> LLM reply -> spoken via the hub's TTS say-handler
-    def _status(state: str, detail: str = "") -> None:
-        hub.broadcast(framer.frame("dialogue.state", {"state": state, "text": detail}))
+    def _status(state: str, detail: str = "", extra: Optional[dict] = None) -> None:
+        payload = {"state": state, "text": detail}
+        if extra:
+            payload.update(extra)  # model + per-turn timing, for the latency readout
+        hub.broadcast(framer.frame("dialogue.state", payload))
 
     llm = LLMModule(
         base_url=CONFIG.llm_base_url,
@@ -297,14 +323,31 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
             hub.active_providers["voice"] = hub.voice
         elif kind == "voice":
             hub.voice = provider_id
+        elif kind == "model":
+            # Re-point the LLM at the new model. Its location travels with it, so the
+            # base URL is rebuilt too — 3.5-flash-lite is served only from `global`.
+            providers.set_active_model(provider_id)
+            vertex = providers.get("llm", "vertex")
+            if vertex is not None and hub.active_providers.get("llm") == "vertex":
+                llm.set_provider("vertex", vertex.settings)
         elif kind == "turn":
             llm.set_gating(provider_id == "vap")
         else:
             return
         hub.active_providers[kind] = provider_id
         hub.pipeline["providers"] = providers.describe(hub.active_providers)
+        # See the note in _build_lite: derived kinds make a bare {kind,id} useless.
         hub.broadcast(
-            framer.frame("provider.state", {"kind": kind, "id": provider_id, "state": "active"})
+            framer.frame(
+                "provider.state",
+                {
+                    "kind": kind,
+                    "id": provider_id,
+                    "state": "active",
+                    "providers": hub.pipeline["providers"],
+                    "active": dict(hub.active_providers),
+                },
+            )
         )
 
     hub.set_provider_handler = _set_provider
@@ -350,18 +393,22 @@ def start(mode: str = "fake") -> RunningNetwork:
     hub.tts_provider = CONFIG.tts_provider if (_tts and _tts.available) else 'gtts'
     if hub.tts_provider != CONFIG.tts_provider:
         print(f"[tts] {CONFIG.tts_provider} unavailable, using gtts")
-    providers.set_active_tts(CONFIG.tts_provider)
-    hub.voice = providers.default_voice(CONFIG.tts_provider)
+    # The *effective* provider, not the configured one — the fallback above may have
+    # demoted it, and passing the configured id here left the voice list describing a
+    # provider that is not actually speaking.
+    providers.set_active_tts(hub.tts_provider)
+    hub.voice = providers.default_voice(hub.tts_provider)
     hub.fer_source = CONFIG.fer_source
     # "turn" reflects the graph actually built: only the maai profile has VAP modules,
     # so lite starts (and stays) ungated regardless of what is installed.
     hub.active_providers = {
         "asr": hub.asr_source,
         "turn": "vap" if mode == "maai" else "off",
-        "voice": providers.default_voice(CONFIG.tts_provider),
+        "model": CONFIG.vertex_model.split("/")[-1],
+        "voice": hub.voice,
         "fer": hub.fer_source,
         "llm": CONFIG.llm_provider,
-        "tts": CONFIG.tts_provider,
+        "tts": hub.tts_provider,  # effective, not configured — see the fallback above
     }
     # Descriptor for the debug pipeline preview: what's wired at each stage.
     if mode == "maai":
