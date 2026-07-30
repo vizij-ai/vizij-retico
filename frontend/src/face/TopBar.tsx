@@ -1,3 +1,4 @@
+import { BrandMark } from "./BrandMark";
 import type { WsStatus } from "../net/wsClient";
 
 /**
@@ -53,6 +54,7 @@ export function TopBar({
   watching,
   watchLoading,
   onToggleWatch,
+  wsUrl,
   settingsOpen,
   onToggleSettings,
   pipelineOpen,
@@ -66,6 +68,7 @@ export function TopBar({
   watching: boolean;
   watchLoading: boolean;
   onToggleWatch: () => void;
+  wsUrl: string;
   settingsOpen: boolean;
   onToggleSettings: () => void;
   pipelineOpen: boolean;
@@ -75,11 +78,17 @@ export function TopBar({
 }) {
   return (
     <header className="z-20 flex h-12 shrink-0 items-center gap-2 border-b border-neutral-800 bg-neutral-950 px-3">
+      <BrandMark title="vizij × retico" />
+
+      {/* Divider: identity on the left, live state and actions to its right. */}
+      <span className="mx-1 h-5 w-px shrink-0 bg-neutral-800" aria-hidden />
+
+      {/* The endpoint used to be printed in full across the bar; it is diagnostic, so it
+          lives on the status dot's tooltip instead. */}
       <span
         className={`inline-block h-2 w-2 shrink-0 rounded-full ${DOT[status]}`}
-        title={`websocket ${status}`}
+        title={`websocket ${status} — ${wsUrl}`}
       />
-      <span className="mr-1 text-xs font-medium text-neutral-300">retico</span>
 
       <Toggle on={listening} onClick={onToggleListen} tone="live" title="Stream the microphone">
         {listening ? "● listening" : "listen"}

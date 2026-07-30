@@ -273,6 +273,7 @@ function ReticoBridge({ headRef }: { headRef: React.RefObject<HTMLDivElement | n
     <div className="flex h-full w-full flex-col overflow-hidden">
       <TopBar
         status={status}
+        wsUrl={WS_URL}
         listening={listening}
         onToggleListen={toggleListen}
         watching={vision.active}
