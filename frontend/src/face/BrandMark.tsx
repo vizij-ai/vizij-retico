@@ -1,18 +1,28 @@
 /**
  * vizij × retico — what this project actually is: the two systems joined.
  *
- * Both marks are the projects' own. The Vizij icon is copied from
- * `vizij-web/apps/vizij-showcase/public/assets/vizij-icon.png`; the retico mark is the
- * retico-team organisation avatar. Both downscaled to 128px, which is ample for a 20px
- * render at 3x DPI.
+ * Both marks are the projects' own — see assets/brand/README.md for provenance.
  *
- * The retico mark is an opaque white tile with no alpha, so it is clipped to a rounded
- * chip rather than keyed out — the artwork contains white too, so removing the
- * background would eat parts of the logo.
+ * The retico mark ships as an opaque white avatar tile. Two variants are derived from it
+ * (see assets/brand/README.md): `retico-on-dark` lifts the outline to near-white, and
+ * `retico-on-light` keeps retico's own navy. Its outline is dark navy — almost the value
+ * of our bar — so the on-light variant is genuinely illegible on dark and vice versa. The
+ * bar is always dark, hence the default; the prop exists for docs and the paper, which
+ * are on white.
+ *
+ * The Vizij mark needs no pair: its shapes are mid-tone and saturated, so it reads on
+ * either background.
  */
 const BASE = import.meta.env.BASE_URL;
 
-export function BrandMark({ title }: { title?: string }) {
+export function BrandMark({
+  title,
+  on = "dark",
+}: {
+  title?: string;
+  /** Background this sits on — picks the legible retico variant. */
+  on?: "dark" | "light";
+}) {
   return (
     <span className="flex select-none items-center gap-1.5" title={title}>
       <img
@@ -21,17 +31,29 @@ export function BrandMark({ title }: { title?: string }) {
         className="h-5 w-5 shrink-0"
         draggable={false}
       />
-      <span className="text-sm font-semibold tracking-tight text-neutral-100">vizij</span>
+      <span
+        className={`text-sm font-semibold tracking-tight ${
+          on === "dark" ? "text-neutral-100" : "text-neutral-900"
+        }`}
+      >
+        vizij
+      </span>
       <span aria-hidden className="px-0.5 text-neutral-600">
         ×
       </span>
       <img
-        src={`${BASE}assets/brand/retico.png`}
+        src={`${BASE}assets/brand/retico-on-${on}.png`}
         alt=""
-        className="h-5 w-5 shrink-0 rounded-[5px]"
+        className="h-5 w-5 shrink-0"
         draggable={false}
       />
-      <span className="text-sm font-semibold tracking-tight text-neutral-100">retico</span>
+      <span
+        className={`text-sm font-semibold tracking-tight ${
+          on === "dark" ? "text-neutral-100" : "text-neutral-900"
+        }`}
+      >
+        retico
+      </span>
       <span className="sr-only">vizij and retico</span>
     </span>
   );
