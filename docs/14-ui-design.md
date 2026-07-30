@@ -20,6 +20,18 @@ So the current layout has an unreachable control and a hero element that disappe
 laptop screen. Screenshot toggles already exist and work; this is about the everyday
 working experience.
 
+## Decisions
+
+| question | choice |
+|---|---|
+| the six selectors | **all in the settings drawer** — the bar keeps only conversation controls |
+| pipeline panel | **overlays** the face; the face never moves or resizes |
+| `say` / inject-a-turn | **into the dev panel** |
+| visual style | **restructure only** — keep the dark utilitarian look, no rebrand |
+
+Consistent set: the top bar ends up holding six things, everything else lives behind a
+toggle, and the face never shifts. Good for screenshots and cheap against the deadline.
+
 ## Principles
 
 1. **The face is the hero.** It should always be fully visible and centred in whatever
@@ -27,8 +39,9 @@ working experience.
 2. **Separate three kinds of control.** Things you touch mid-conversation (listen, watch
    me), things you configure occasionally (the six selectors), and things that only exist
    for debugging (say, inject-a-turn). Today they look identical and sit together.
-3. **Panels reserve space rather than overlap.** The pipeline panel currently floats over
-   the face; the face should re-centre when it opens.
+3. **The face never moves.** Panels overlay it rather than resizing the stage, so the
+   framing is identical whether a panel is open or not — which is what makes screenshots
+   and video comparable across shots.
 4. **Nothing gets wider than the window.** Ever.
 
 ## Structure
@@ -36,26 +49,24 @@ working experience.
 ```
 ┌──────────────────────────────────────────────────────────┐
 │ ● retico      [ listen ] [ watch me ]   ⚙  pipeline  dev │  top bar, fixed height
-├───────────────────────────────────────┬──────────────────┤
-│                                       │  pipeline        │
-│                                       │  ─────────       │
-│                 ( face )              │  heard: …        │
-│              centred, fills           │  ▸ Turn-taking   │
-│              available space          │  ▸ LLM  0.40s    │
-│                                       │  ▸ TTS           │
-│                                       │  ▸ Face driver   │
-│                                       │                  │
-│                            [camera]   │  recent events   │
-└───────────────────────────────────────┴──────────────────┘
+├──────────────────────────────────────────────────────────┤
+│                                     ┌──────────────────┐ │
+│                                     │ pipeline         │ │
+│               ( face )              │ heard: …         │ │
+│         always centred, always      │ ▸ LLM  0.40s     │ │  overlay,
+│           the same size             │ ▸ TTS            │ │  face unchanged
+│                                     └──────────────────┘ │
+│                          [camera]                        │
+└──────────────────────────────────────────────────────────┘
 ```
 
 - **Top bar** — status, the two primary actions, and the panel toggles. Only what you
   touch during a conversation.
 - **Stage** — flex child with `min-h-0` so the canvas fits the remaining height instead
   of overflowing it. This is what fixes the 720 px case.
-- **Pipeline sidebar** — a real column (~380 px) that reserves layout space. Below
-  ~1024 px wide it becomes an overlay, since there isn't room for both.
-- **Settings drawer** (the ⚙) — a slide-over holding the six selectors, grouped by
+- **Pipeline panel** — overlays the stage, top-right, with its own scroll. The face is
+  laid out independently of it, so opening or closing it never reflows the face.
+- **Settings drawer** (the ⚙) — a slide-over holding *all six* selectors, grouped by
   pipeline stage rather than listed flat:
 
   | group | controls |

@@ -13,7 +13,8 @@ import { useBrowserSpeech } from "../capture/useBrowserSpeech";
 import { useFaceExpression } from "../capture/useFaceExpression";
 import { DevControls } from "./devControls";
 import { PipelinePanel, type PipelineInfo, type DialogueState } from "./PipelinePanel";
-import { ProviderBar } from "./ProviderBar";
+import { SettingsDrawer } from "./SettingsDrawer";
+import { TopBar } from "./TopBar";
 import { CameraPreview } from "./CameraPreview";
 
 // Our own GLB, hosted under frontend/public/assets/.
@@ -33,16 +34,9 @@ const assetBundle: VizijAssetBundle = {
 };
 
 /** Registers the retico input driver and owns the WebSocket connection. */
-function ReticoBridge({
-  headRef,
-  showPanel,
-}: {
-  headRef: React.RefObject<HTMLDivElement | null>;
-  showPanel: boolean;
-}) {
+function ReticoBridge({ headRef }: { headRef: React.RefObject<HTMLDivElement | null> }) {
   const rt = useVizijRuntime();
   const [status, setStatus] = useState<WsStatus>("connecting");
-  const [last, setLast] = useState<ReticoEvent | null>(null);
   const [log, setLog] = useState<ReticoEvent[]>([]);
   const [mode, setMode] = useState<string | null>(null);
   const [asrSource, setAsrSource] = useState<string | null>(null);
@@ -51,6 +45,11 @@ function ReticoBridge({
   const [asrLoading, setAsrLoading] = useState(false);
   const [asrNotice, setAsrNotice] = useState<string | null>(null);
   const [activeProviders, setActiveProviders] = useState<Record<string, string>>({});
+  // Panel visibility lives here rather than in FaceStage: the controls that toggle it sit
+  // in the top bar, which needs this component's connection and capture state anyway.
+  const [showPanel, setShowPanel] = useState(true);
+  const [dev, setDev] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // Read inside the capture loop, which must not re-subscribe on every change.
   const activeProvidersRef = useRef<Record<string, string>>({});
   activeProvidersRef.current = activeProviders;
@@ -205,7 +204,6 @@ function ReticoBridge({
         if (e.payload.state === "active") setAsrSource(e.payload.source ?? null);
         return;
       }
-      setLast(e);
       setLog((prev) => {
         const head = prev[0];
         // collapse consecutive identical turn states to reduce noise
@@ -261,143 +259,110 @@ function ReticoBridge({
     };
   }, [rt.ready]);
 
-  const dot = status === "open" ? "bg-emerald-400" : status === "connecting" ? "bg-amber-400" : "bg-red-400";
+  const notices = [
+    mic.error && { tone: "err", text: `mic: ${mic.error}` },
+    speech.error && { tone: "err", text: `stt: ${speech.error}` },
+    vision.error && { tone: "err", text: `camera: ${vision.error}` },
+    asrNotice && { tone: "warn", text: asrNotice },
+  ].filter(Boolean) as { tone: string; text: string }[];
+
   return (
-    <>
-      {showPanel && (
-        <PipelinePanel
-          pipeline={pipeline}
-          mode={mode}
-          listening={listening}
-          partial={speech.partial}
-          log={log}
-          dialogue={dialogue}
-          activityRef={activityRef}
-          asrSource={asrSource}
-          activeProviders={activeProviders}
-          watching={vision.active}
-        />
-      )}
-      <CameraPreview stream={vision.stream} log={log} frames={vision.frames} />
-    <div className="absolute left-3 top-3 rounded bg-neutral-950/70 px-3 py-2 text-xs text-neutral-100 backdrop-blur">
-      <div className="flex items-center gap-2">
-        <span className={`inline-block h-2 w-2 rounded-full ${dot}`} />
-        <span>retico {status}</span>
-        <span className="opacity-60">{WS_URL}</span>
-        <button
-          className={`ml-2 rounded px-2 py-0.5 ${listening ? "bg-emerald-600" : "bg-neutral-700"} hover:opacity-90`}
-          onClick={toggleListen}
-        >
-          {listening ? "● listening" : "listen"}
-        </button>
-        <button
-          className={`rounded px-2 py-0.5 ${vision.active ? "bg-emerald-600" : "bg-neutral-700"} hover:opacity-90 ${vision.loading ? "opacity-50" : ""}`}
-          onClick={() => (vision.active ? vision.stop() : vision.start())}
-          disabled={vision.loading}
-          title="Camera → MediaPipe blendshapes. Only the coefficients are sent; no video leaves the browser."
-        >
-          {vision.loading ? "loading…" : vision.active ? "● watching" : "watch me"}
-        </button>
-        <ProviderBar
+    // Column: fixed-height bar, then the stage takes the rest. `min-h-0` is what lets the
+    // face shrink to fit instead of overflowing — without it the canvas keeps its natural
+    // height and the face ends up below the fold on a 720 px window.
+    <div className="flex h-full w-full flex-col overflow-hidden">
+      <TopBar
+        status={status}
+        listening={listening}
+        onToggleListen={toggleListen}
+        watching={vision.active}
+        watchLoading={vision.loading}
+        onToggleWatch={() => (vision.active ? vision.stop() : vision.start())}
+        settingsOpen={settingsOpen}
+        onToggleSettings={() => setSettingsOpen((v) => !v)}
+        pipelineOpen={showPanel}
+        onTogglePipeline={() => setShowPanel((v) => !v)}
+        devOpen={dev}
+        onToggleDev={() => setDev((v) => !v)}
+      />
+
+      <div className="relative min-h-0 flex-1">
+        {/* The face is laid out on its own and never reflows: panels overlay it, so the
+            framing is identical whether they are open or closed. */}
+        <div ref={headRef} className="h-full w-full will-change-transform">
+          <VizijRuntimeFace />
+        </div>
+
+        {showPanel && (
+          <div className="absolute right-3 top-3 z-10 max-h-[calc(100%-1.5rem)] w-[24rem] max-w-[calc(100%-1.5rem)] overflow-y-auto">
+            <PipelinePanel
+              pipeline={pipeline}
+              mode={mode}
+              listening={listening}
+              partial={speech.partial}
+              log={log}
+              dialogue={dialogue}
+              activityRef={activityRef}
+              asrSource={asrSource}
+              activeProviders={activeProviders}
+              watching={vision.active}
+            />
+          </div>
+        )}
+
+        <CameraPreview stream={vision.stream} log={log} frames={vision.frames} />
+
+        {dev && (
+          <DevControls
+            debug={{
+              sayText,
+              setSayText,
+              say,
+              userText,
+              setUserText,
+              simulateUserTurn,
+            }}
+          />
+        )}
+
+        <SettingsDrawer
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
           registry={pipeline?.providers}
           active={{ ...activeProviders, asr: asrSource ?? activeProviders.asr }}
           busyKind={asrLoading ? "asr" : null}
           onSelect={setProvider}
         />
+
+        {/* Notices float rather than growing the bar, which is what pushed the face down. */}
+        {notices.length > 0 && (
+          <div className="absolute bottom-3 left-3 z-20 space-y-1 text-xs">
+            {notices.map((n, i) => (
+              <div
+                key={i}
+                className={`rounded px-2 py-1 backdrop-blur ${
+                  n.tone === "err"
+                    ? "bg-red-950/80 text-red-200"
+                    : "bg-amber-950/80 text-amber-200"
+                }`}
+              >
+                {n.text}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-      {mic.error && <div className="mt-1 text-red-300">mic: {mic.error}</div>}
-      {speech.error && <div className="mt-1 text-red-300">stt: {speech.error}</div>}
-      {vision.error && <div className="mt-1 text-red-300">camera: {vision.error}</div>}
-      {asrNotice && <div className="mt-1 text-amber-300">{asrNotice}</div>}
-      {useBrowserAsr && listening && !speech.error && (
-        <div className="mt-1 opacity-60">
-          stt: {speech.listening ? "recognizer running" : "starting…"} · {speech.results} result
-          {speech.results === 1 ? "" : "s"}
-        </div>
-      )}
-      <div className="mt-2 flex gap-1">
-        <input
-          className="w-56 rounded bg-neutral-800 px-2 py-1 text-neutral-100 outline-none"
-          value={sayText}
-          onChange={(e) => setSayText(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && say()}
-          placeholder="agent says (TTS only)…"
-        />
-        <button className="rounded bg-teal-700 px-2 py-1 hover:bg-teal-600" onClick={say}>
-          say
-        </button>
-      </div>
-      <div className="mt-1 flex gap-1">
-        <input
-          className="w-56 rounded bg-neutral-800 px-2 py-1 text-neutral-100 outline-none"
-          value={userText}
-          onChange={(e) => setUserText(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && simulateUserTurn()}
-          placeholder="debug: type a user turn instead of mic…"
-        />
-        <button
-          className="rounded bg-indigo-700 px-2 py-1 hover:bg-indigo-600"
-          onClick={simulateUserTurn}
-          title="Inject as a user turn: ASR → turn gate → LLM → TTS → face"
-        >
-          user↵
-        </button>
-      </div>
-      {last && (
-        <div className="mt-1 opacity-80">
-          <span className="font-mono">{last.type}</span>{" "}
-          {last.type === "turn.state" && (
-            <span>
-              {last.payload.state} · shift {Number(last.payload.p_shift).toFixed(2)} · user{" "}
-              {Number(last.payload.p_user).toFixed(2)}
-            </span>
-          )}
-        </div>
-      )}
     </div>
-    </>
   );
 }
 
 export function FaceStage() {
-  const [dev, setDev] = useState(false);
-  // Collapses the pipeline panel and the dev sliders for an unobstructed view of the
-  // face (demos, screenshots). The connection HUD stays so `listen` is still reachable.
-  const [showPanels, setShowPanels] = useState(true);
   // Wraps the face canvas so the driver can apply head motion (nod/shake/tilt) as a
   // transform — the rig's head transform isn't writable from this runtime build.
   const headRef = useRef<HTMLDivElement | null>(null);
   return (
     <VizijRuntimeProvider assetBundle={assetBundle} autostart>
-      <div className="relative h-full w-full">
-        <div ref={headRef} className="h-full w-full will-change-transform">
-          <VizijRuntimeFace />
-        </div>
-        <ReticoBridge headRef={headRef} showPanel={showPanels} />
-        {/* Toggle buttons: lit when their panel is showing. Kept above the dev panel
-            (z-20) and shifted clear of it when open, so the way out is always visible. */}
-        <div
-          className={`absolute top-3 z-20 flex gap-1 text-xs text-neutral-100 ${
-            dev ? "right-[25rem]" : "right-3"
-          }`}
-        >
-          <button
-            className={`rounded px-2 py-1 ${showPanels ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
-            onClick={() => setShowPanels((p) => !p)}
-            title="Show/hide the pipeline panel"
-          >
-            pipeline
-          </button>
-          <button
-            className={`rounded px-2 py-1 ${dev ? "bg-emerald-600" : "bg-neutral-700 hover:bg-neutral-600"}`}
-            onClick={() => setDev((d) => !d)}
-            title="Show/hide the dev sliders"
-          >
-            dev
-          </button>
-        </div>
-        {dev && <DevControls />}
-      </div>
+      <ReticoBridge headRef={headRef} />
     </VizijRuntimeProvider>
   );
 }

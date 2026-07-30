@@ -275,7 +275,9 @@ export function PipelinePanel({
   };
 
   return (
-    <div className="absolute bottom-3 left-3 flex max-h-[66vh] w-[35rem] max-w-[50vw] flex-col rounded bg-neutral-950/85 p-3 text-xs text-neutral-100 backdrop-blur">
+    // Placement belongs to the parent — this used to pin itself bottom-left, which put
+    // it on top of the face and made it impossible to reposition.
+    <div className="flex flex-col rounded border border-neutral-800 bg-neutral-950/90 p-3 text-xs text-neutral-100 shadow-lg backdrop-blur">
       <div className="mb-2 flex items-center justify-between">
         <span className="font-semibold">pipeline · what’s happening &amp; what’s active</span>
         <span className={`rounded px-2 py-0.5 ${maai ? "bg-emerald-900/60" : "bg-amber-900/50"}`}>
