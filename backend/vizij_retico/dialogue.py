@@ -18,6 +18,8 @@ import requests
 import retico_core
 from retico_core.text import GeneratedTextIU, SpeechRecognitionIU
 
+from .affect import AFFECT_LABELS
+
 # Where to break a streamed reply into speakable clauses. Prefer sentence boundaries —
 # each synthesized chunk is a separate audio file, so splitting mid-sentence makes the
 # delivery sound chopped. Commas are only a fallback for a sentence that runs long
@@ -220,6 +222,9 @@ class LLMModule(retico_core.AbstractModule):
         self.provider_id = ""
         # Latency of the current turn, reported with the 'spoke' status.
         self.timing: dict = {}
+        # Notified when a reply begins, so TTS can bind its clauses to the
+        # current generation and discard ones from an interrupted reply.
+        self.on_reply_start: Optional[Callable[[], None]] = None
         self._last_out = None  # previous outgoing IU, for the incremental chain
         self.api_key = ""
         # "key" = static bearer from settings; "adc" = short-lived Google token minted per
@@ -394,12 +399,26 @@ class LLMModule(retico_core.AbstractModule):
 
     def _emit_clause(self, clause: str, first: bool = False) -> None:
         """Publish one speakable clause downstream (TTS + affect) as an ADD."""
+        # Strip an affect tag from *any* clause, not just the first. The streaming scanner
+        # only ever looked for one tag at the start of the reply, but models happily open
+        # each sentence with one — so "[surprise] They can taste with their arms" went
+        # straight to TTS and the agent said the word "surprise" out loud. Same failure as
+        # the emoji leak. A later tag is also a genuine mid-reply affect change, so use it.
+        affect = self._affect if first else None
+        match = _AFFECT_TAG.match(clause)
+        if match:
+            label = match.group(1).lower()
+            if label in AFFECT_LABELS:
+                affect = label
+            clause = clause[match.end() :].lstrip()
+            if not clause:
+                return
         iu = self.create_iu(self._last_out)
         iu.payload = clause
         iu.text = clause
         # The model's own affect tag rides on the first clause, so AffectModule can set
         # the expression as speech begins rather than guessing from the text.
-        iu.affect = self._affect if first else None
+        iu.affect = affect
         self._last_out = iu
         self.append(retico_core.UpdateMessage.from_iu(iu, retico_core.UpdateType.ADD))
 
@@ -467,6 +486,8 @@ class LLMModule(retico_core.AbstractModule):
             # Per-turn latency, surfaced to the UI so model choices can be compared on
             # numbers rather than impressions.
             self.timing = {"first_token": None, "first_clause": None}
+            if self.on_reply_start is not None:
+                self.on_reply_start()
             turn_started = time.monotonic()
             if self.status is not None:
                 self.status("thinking", text)

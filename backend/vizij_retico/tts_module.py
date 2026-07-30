@@ -42,6 +42,8 @@ class TTSModule(retico_core.AbstractConsumingModule):
         # interruption. Cheaper and less racy than draining the queue, which cannot
         # recall a clause the worker has already taken.
         self._generation = 0
+        # Generation the reply currently streaming belongs to.
+        self._reply_generation = 0
         self._worker = threading.Thread(target=self._drain, daemon=True)
         self._worker.start()
 
@@ -50,13 +52,27 @@ class TTSModule(retico_core.AbstractConsumingModule):
             if ut != retico_core.UpdateType.ADD:
                 continue  # COMMIT just marks end-of-utterance; nothing extra to speak
             text = (getattr(iu, "text", "") or "").strip()
-            if text:
-                self._queue.put((self._generation, text))
+            if not text:
+                continue
+            # Tag with the generation the *reply* began in, not the one current at enqueue
+            # time. The LLM keeps streaming for a moment after a barge-in cancels, and
+            # those late clauses were being stamped with the new generation — so the
+            # interrupted reply carried on speaking alongside the new one. Two voices,
+            # different sentences.
+            self._queue.put((self._reply_generation, text))
         return None
 
+    def begin_reply(self) -> None:
+        """Called when a new reply starts, to bind its clauses to the live generation."""
+        self._reply_generation = self._generation
+
     def cancel(self) -> None:
-        """Abandon everything queued (the user interrupted)."""
+        """Abandon everything queued, and anything still streaming from this reply."""
         self._generation += 1
+        # Also move the in-flight reply forward, so clauses that arrive after this point
+        # from the *interrupted* generation are discarded rather than inheriting the new
+        # one. begin_reply() re-binds when the next reply actually starts.
+        self._reply_generation = -1
         while True:
             try:
                 self._queue.get_nowait()

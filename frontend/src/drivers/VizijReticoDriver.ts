@@ -334,7 +334,7 @@ export function createReticoDriver(
       return entries;
     };
 
-    const onSpeech = (e: ReticoEvent) => {
+    const playClip = (e: ReticoEvent, onDone: () => void) => {
       const timeline = buildTimeline(e.payload.visemes ?? []);
       const useVisemes = timeline.length > 0;
 
@@ -366,6 +366,7 @@ export function createReticoDriver(
         clearVisemes();
         setJaw(0);
         if (objectUrl) URL.revokeObjectURL(objectUrl);
+        onDone();
       };
 
       /** Cross-fade out the previous pose and in the new one, on the same frame. */
@@ -455,6 +456,35 @@ export function createReticoDriver(
       })();
     };
 
+    // The backend streams a reply as separate clauses, synthesized ~0.3 s apart while
+    // each is several seconds of audio. Playing them on arrival meant three clips of one
+    // reply overlapping — measured 5.5 s and 7.1 s of simultaneous speech, which is the
+    // "two voices saying different things". Play strictly one at a time.
+    const speechQueue: ReticoEvent[] = [];
+    let playing = false;
+
+    const playNext = () => {
+      const next = speechQueue.shift();
+      if (!next) {
+        playing = false;
+        return;
+      }
+      playing = true;
+      playClip(next, playNext);
+    };
+
+    const enqueueSpeech = (e: ReticoEvent) => {
+      speechQueue.push(e);
+      if (!playing) playNext();
+    };
+
+    const cancelSpeech = () => {
+      // Barge-in: drop what has not started as well as stopping what has.
+      speechQueue.length = 0;
+      stopCurrentSpeech?.();
+      playing = false;
+    };
+
     const dispatch = (e: ReticoEvent) => {
       switch (e.type) {
         case "turn.state":
@@ -470,13 +500,13 @@ export function createReticoDriver(
         case "emotion.fer":
           return onFer(e);
         case "speech.audio":
-          return onSpeech(e);
+          return enqueueSpeech(e);
         case "speech.end":
           return scheduleEmotionRelease();
         case "speech.cancel":
-          // The user interrupted. The backend has already dropped the queued clauses;
-          // this stops the one already in the browser.
-          stopCurrentSpeech?.();
+          // The user interrupted. The backend has dropped its queued clauses; this drops
+          // ours and stops the clip already sounding.
+          cancelSpeech();
           return;
         default:
           return;

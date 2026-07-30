@@ -71,6 +71,7 @@ def _build_lite(hub: WebSocketHub, framer: EventFramer):
         gate_on_turn=False,  # nothing produces turn.state in this profile
     )
     tts = TTSModule(say=hub.say_handler)
+    llm.on_reply_start = tts.begin_reply
     bridge = VizijWebSocketModule(hub, classifiers=MaaiClassifiers().registry, framer=framer)
 
     # Two ASR sources feed a gate that forwards only the active one — the same shape as
@@ -261,6 +262,7 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
     gate.subscribe(llm)
     # Streamed clauses -> speech, spoken in generation order.
     tts = TTSModule(say=hub.say_handler)  # say_handler is set in start()
+    llm.on_reply_start = tts.begin_reply
     llm.subscribe(tts)
     # Affect is a first-class IU rather than a side-channel broadcast, so it can be
     # revised as better evidence arrives and other modules can subscribe to it.
