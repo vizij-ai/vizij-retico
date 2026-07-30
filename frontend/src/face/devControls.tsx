@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useVizijRuntime, buildRigInputPath } from "@vizij/runtime-react";
+import { Panel } from "./Panel";
 
 /**
  * Dev panel: search + drive any rig input channel, with live values.
@@ -22,7 +23,13 @@ export interface DebugTools {
   simulateUserTurn: () => void;
 }
 
-export function DevControls({ debug }: { debug?: DebugTools }) {
+export function DevControls({
+  debug,
+  onClose,
+}: {
+  debug?: DebugTools;
+  onClose: () => void;
+}) {
   const rt = useVizijRuntime();
   const {
     ready,
@@ -98,9 +105,13 @@ export function DevControls({ debug }: { debug?: DebugTools }) {
   };
 
   return (
-    <div className="absolute right-0 top-0 z-20 flex h-full w-96 flex-col bg-neutral-950/85 text-xs text-neutral-100 backdrop-blur">
+    <Panel
+      title={`dev · ${filtered.length}/${allPaths.length} inputs`}
+      onClose={onClose}
+      width="w-[24rem]"
+    >
       {debug && (
-        <div className="flex flex-col gap-1.5 border-b border-neutral-800 p-3">
+        <div className="-mx-3 -mt-3 mb-3 flex flex-col gap-1.5 border-b border-neutral-800 p-3">
           <span className="text-[11px] uppercase tracking-wide text-neutral-400">
             drive the pipeline without a mic
           </span>
@@ -138,9 +149,8 @@ export function DevControls({ debug }: { debug?: DebugTools }) {
           </div>
         </div>
       )}
-      <div className="flex flex-col gap-2 border-b border-neutral-800 p-3">
-        <div className="flex items-center justify-between">
-          <span className="font-semibold">dev · {filtered.length}/{allPaths.length} inputs</span>
+      <div className="-mx-3 mb-3 flex flex-col gap-2 border-b border-neutral-800 px-3 pb-3">
+        <div className="flex items-center justify-end">
           <div className="flex gap-1">
             <button
               className={`rounded px-2 py-1 ${animOn ? "bg-amber-600" : "bg-neutral-700"} hover:opacity-90`}
@@ -200,6 +210,6 @@ export function DevControls({ debug }: { debug?: DebugTools }) {
         )}
         {filtered.length === 0 && <div className="opacity-60">no channels match “{query}”.</div>}
       </div>
-    </div>
+    </Panel>
   );
 }

@@ -13,6 +13,7 @@ import { useBrowserSpeech } from "../capture/useBrowserSpeech";
 import { useFaceExpression } from "../capture/useFaceExpression";
 import { DevControls } from "./devControls";
 import { PipelinePanel, type PipelineInfo, type DialogueState } from "./PipelinePanel";
+import { PanelDock } from "./Panel";
 import { SettingsDrawer } from "./SettingsDrawer";
 import { TopBar } from "./TopBar";
 import { CameraPreview } from "./CameraPreview";
@@ -294,9 +295,20 @@ function ReticoBridge({ headRef }: { headRef: React.RefObject<HTMLDivElement | n
           <VizijRuntimeFace />
         </div>
 
-        {showPanel && (
-          <div className="absolute right-3 top-3 z-10 max-h-[calc(100%-1.5rem)] w-[24rem] max-w-[calc(100%-1.5rem)] overflow-y-auto">
+        {/* One dock, one treatment. Panels sit side by side so the pipeline stays
+            readable while a setting is changed. */}
+        <PanelDock>
+          <SettingsDrawer
+            open={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+            registry={pipeline?.providers}
+            active={{ ...activeProviders, asr: asrSource ?? activeProviders.asr }}
+            busyKind={asrLoading ? "asr" : null}
+            onSelect={setProvider}
+          />
+          {showPanel && (
             <PipelinePanel
+              onClose={() => setShowPanel(false)}
               pipeline={pipeline}
               mode={mode}
               listening={listening}
@@ -308,32 +320,23 @@ function ReticoBridge({ headRef }: { headRef: React.RefObject<HTMLDivElement | n
               activeProviders={activeProviders}
               watching={vision.active}
             />
-          </div>
-        )}
+          )}
+          {dev && (
+            <DevControls
+              onClose={() => setDev(false)}
+              debug={{
+                sayText,
+                setSayText,
+                say,
+                userText,
+                setUserText,
+                simulateUserTurn,
+              }}
+            />
+          )}
+        </PanelDock>
 
         <CameraPreview stream={vision.stream} log={log} frames={vision.frames} />
-
-        {dev && (
-          <DevControls
-            debug={{
-              sayText,
-              setSayText,
-              say,
-              userText,
-              setUserText,
-              simulateUserTurn,
-            }}
-          />
-        )}
-
-        <SettingsDrawer
-          open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-          registry={pipeline?.providers}
-          active={{ ...activeProviders, asr: asrSource ?? activeProviders.asr }}
-          busyKind={asrLoading ? "asr" : null}
-          onSelect={setProvider}
-        />
 
         {/* Notices float rather than growing the bar, which is what pushed the face down. */}
         {notices.length > 0 && (

@@ -1,6 +1,7 @@
 import { useEffect, useState, type MutableRefObject } from "react";
 import type { ReticoEvent } from "../net/wsClient";
 import { describeEvent } from "./ExplainPanel";
+import { Panel } from "./Panel";
 
 export type ProviderOption = {
   id: string;
@@ -60,6 +61,7 @@ export function PipelinePanel({
   asrSource,
   activeProviders = {},
   watching = false,
+  onClose,
 }: {
   pipeline: PipelineInfo;
   mode: string | null;
@@ -71,6 +73,7 @@ export function PipelinePanel({
   asrSource: string | null;
   activeProviders?: Record<string, string>;
   watching?: boolean;
+  onClose: () => void;
 }) {
   // Re-render on a timer so the "active" glow fades as events go stale.
   const [, setTick] = useState(0);
@@ -275,11 +278,8 @@ export function PipelinePanel({
   };
 
   return (
-    // Placement belongs to the parent — this used to pin itself bottom-left, which put
-    // it on top of the face and made it impossible to reposition.
-    <div className="flex flex-col rounded border border-neutral-800 bg-neutral-950/90 p-3 text-xs text-neutral-100 shadow-lg backdrop-blur">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="font-semibold">pipeline · what’s happening &amp; what’s active</span>
+    <Panel title="pipeline" onClose={onClose} width="w-[24rem]">
+      <div className="mb-2 flex items-center justify-end">
         <span className={`rounded px-2 py-0.5 ${maai ? "bg-emerald-900/60" : "bg-amber-900/50"}`}>
           {mode ?? "…"}
         </span>
@@ -347,6 +347,6 @@ export function PipelinePanel({
         })}
         {log.length === 0 && <div className="opacity-60">waiting for events…</div>}
       </div>
-    </div>
+    </Panel>
   );
 }

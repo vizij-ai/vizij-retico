@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { Panel } from "./Panel";
 import type { ProviderRegistry } from "./PipelinePanel";
 
 /**
@@ -8,6 +8,10 @@ import type { ProviderRegistry } from "./PipelinePanel";
  * 1280 px wide — the last selector was clipped off-screen and could not be clicked at
  * all. Grouping them by stage also gives the registry's `note` somewhere to live: it was
  * previously only a tooltip, so the reason an option was unavailable was invisible.
+ *
+ * Rendered as a plain Panel, like pipeline and dev. It was briefly a scrimmed slide-over,
+ * which read as a modal — wrong, because changing a provider is something you do while
+ * watching the face, not a mode you enter and leave.
  */
 
 /** kind → section. Kinds not listed still render, under "Other", so a new backend kind
@@ -44,14 +48,6 @@ export function SettingsDrawer({
   busyKind?: string | null;
   onSelect: (kind: string, id: string) => void;
 }) {
-  // Esc closes. This is a panel you open, change one thing in, and dismiss.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
   if (!open || !registry) return null;
 
   const known = new Set(SECTIONS.flatMap((s) => s.kinds));
@@ -95,43 +91,24 @@ export function SettingsDrawer({
   };
 
   return (
-    <>
-      {/* Scrim: clicking away is the fastest way to dismiss. */}
-      <div className="absolute inset-0 z-30 bg-black/40" onClick={onClose} />
-      <aside
-        className="absolute right-0 top-0 z-40 flex h-full w-[22rem] max-w-[90vw] flex-col border-l border-neutral-800 bg-neutral-950/95 backdrop-blur"
-        role="dialog"
-        aria-label="Settings"
-      >
-        <header className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
-          <h2 className="text-sm font-semibold text-neutral-100">Settings</h2>
-          <button
-            className="rounded px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
-            onClick={onClose}
-          >
-            close
-          </button>
-        </header>
-        <div className="flex-1 overflow-y-auto px-4 py-3">
-          {sections.map((section) => {
-            const rows = section.kinds.map(row).filter(Boolean);
-            if (!rows.length) return null;
-            return (
-              <section key={section.title} className="mb-5">
-                <div className="mb-2 flex items-baseline gap-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-300">
-                    {section.title}
-                  </h3>
-                  {section.hint && (
-                    <span className="text-[11px] text-neutral-600">{section.hint}</span>
-                  )}
-                </div>
-                <div className="space-y-3">{rows}</div>
-              </section>
-            );
-          })}
-        </div>
-      </aside>
-    </>
+    <Panel title="settings" onClose={onClose} width="w-[20rem]">
+      {sections.map((section) => {
+        const rows = section.kinds.map(row).filter(Boolean);
+        if (!rows.length) return null;
+        return (
+          <section key={section.title} className="mb-4 last:mb-0">
+            <div className="mb-2 flex items-baseline gap-2">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-300">
+                {section.title}
+              </h3>
+              {section.hint && (
+                <span className="text-[11px] text-neutral-600">{section.hint}</span>
+              )}
+            </div>
+            <div className="space-y-3">{rows}</div>
+          </section>
+        );
+      })}
+    </Panel>
   );
 }
