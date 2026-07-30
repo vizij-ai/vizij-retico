@@ -123,5 +123,11 @@ export function useBrowserSpeech(getWs: () => WsClient | null) {
     }
   }, [getWs]);
 
-  return { supported, listening, partial, error, fatal, results, start, stop };
+  // An explicit "use the browser recognizer" deserves a real attempt: `fatal` is sticky
+  // (it is only cleared by a *successful* start), so without this a single transient
+  // service-not-allowed made the option permanently unselectable — picking it bounced
+  // straight back to a backend ASR before the recognizer was ever asked again.
+  const clearFatal = useCallback(() => setFatal(null), []);
+
+  return { supported, listening, partial, error, fatal, clearFatal, results, start, stop };
 }

@@ -103,6 +103,12 @@ function ReticoBridge({ headRef }: { headRef: React.RefObject<HTMLDivElement | n
   const setAsrSourceRemote = (source: string) => {
     if (source === asrSource) return;
     if (source === "whisper") setAsrLoading(true);
+    // Choosing the browser recognizer clears any past fatal, so the fallback effect
+    // below judges this attempt rather than an old one and the choice actually sticks.
+    if (source === "browser") {
+      speech.clearFatal();
+      setAsrNotice(null);
+    }
     wsRef.current?.sendJSON({ type: "control", action: "set_asr_source", source });
   };
 
@@ -121,17 +127,28 @@ function ReticoBridge({ headRef }: { headRef: React.RefObject<HTMLDivElement | n
   }, [useBrowserAsr, listening, speech.listening, speech.supported, speech.start, speech.stop]);
 
   // If this browser's speech service can't work (no mic permission, offline speech
-  // service, Chromium build without it), fall back to backend Whisper instead of
+  // service, Chromium build without it), hand transcription to the backend instead of
   // silently transcribing nothing.
+  //
+  // This used to name Whisper outright. On the `lite` backend Whisper does not exist, so
+  // selecting "browser" bounced straight to a source with no module behind it and the
+  // app went deaf — while still reporting that it had switched. Pick from what the
+  // backend says it can actually do, preferring Google STT.
   useEffect(() => {
-    if (speech.fatal && useBrowserAsr) {
-      setAsrNotice(
-        `browser STT unavailable (${speech.fatal}) — switched to Whisper on the backend`,
-      );
-      setAsrSourceRemote("whisper");
+    if (!speech.fatal || !useBrowserAsr) return;
+    const options = pipeline?.providers?.asr?.options ?? [];
+    const usable = (id: string) =>
+      options.some((o) => o.id === id && o.available !== false);
+    const fallback = ["google", "whisper"].find(usable);
+    if (!fallback) {
+      setAsrNotice(`browser STT unavailable (${speech.fatal}) — and no backend ASR is`);
+      return;
     }
+    const label = options.find((o) => o.id === fallback)?.label ?? fallback;
+    setAsrNotice(`browser STT unavailable (${speech.fatal}) — switched to ${label}`);
+    setAsrSourceRemote(fallback);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [speech.fatal, useBrowserAsr]);
+  }, [speech.fatal, useBrowserAsr, pipeline]);
 
   // Browser STT partials are frontend-only (not WS events) — mark activity so the
   // pipeline's ASR stage glows while the user is mid-utterance.
