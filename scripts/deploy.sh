@@ -80,7 +80,13 @@ if [ "$PROFILE" = "full" ]; then
   # the first connection waits for the container plus the VAP/Whisper weights, which is
   # why the Dockerfile bakes them in. Set MIN_INSTANCES=1 to trade money for that wait
   # before a live demo.
-  args+=(--cpu 4 --memory 8Gi --no-cpu-throttling
+  # 8 vCPU, not 4. Measured on Cloud Run, the three retico-maai models cost roughly
+  # 0.09 s (VAP), 0.12 s (backchannel) and 0.09 s (nod) per 60 ms of audio — about 1.6,
+  # 2.0 and 1.5 cores respectively just to keep pace with real time, before ASR, the LLM,
+  # TTS and the hub. On 4 vCPU they ran at ~0.5x real time on unbounded queues, so they
+  # never caught up, never idled, and starved the ASR thread: the agent answered the
+  # first turn and then went deaf. Arithmetic, not tuning.
+  args+=(--cpu "${CPU:-8}" --memory "${MEMORY:-8Gi}" --no-cpu-throttling
          --min-instances "${MIN_INSTANCES:-0}")
 fi
 

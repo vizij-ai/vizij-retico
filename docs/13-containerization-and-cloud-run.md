@@ -235,6 +235,20 @@ Things that will bite otherwise:
 
 - **WebSockets** work on Cloud Run but the connection is bounded by the request timeout;
   `--timeout 3600` gives the maximum hour. The client already reconnects with backoff.
+- **`full` needs 8 vCPU, not 4 — this is arithmetic, not tuning.** Measured on Cloud
+  Run, each retico-maai model costs ~0.09 s (VAP), ~0.12 s (backchannel) and ~0.09 s
+  (nod) per 60 ms of audio. To keep pace with real time each needs ~1.5-2 cores, so
+  perception alone wants ~5 before ASR, the LLM, TTS and the hub. On 4 vCPU all three ran
+  at ~0.5x real time on unbounded queues: they never caught up, never idled, and starved
+  the ASR thread — the agent answered the first turn and then went permanently deaf, with
+  no error logged anywhere. At 8 vCPU three consecutive turns pass against the deployed
+  service.
+- **VAP still lags its own queue even at 8 vCPU** (~0.62x real time during speech). More
+  cores let the three models run concurrently; they do not make any one of them faster,
+  and 0.092 s per 60 ms message is inherently 1.5x too slow. This no longer breaks ASR,
+  but turn-taking decisions drift further behind the longer a session runs. The real
+  fixes are a GPU-backed revision, dropping stale frames on the perception path instead
+  of queueing them, or `retico-zmq` onto another host.
 - **CPU throttling.** By default Cloud Run only allocates CPU while a request is being
   handled. The retico network runs continuously on background threads, so `full` needs
   `--no-cpu-throttling` and realistically `--min-instances=1`; otherwise VAP inference
