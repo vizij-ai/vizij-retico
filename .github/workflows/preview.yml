@@ -1,0 +1,144 @@
+# A throwaway Cloud Run deployment per pull request, so a branch can be tried in the
+# real environment before it reaches main.
+#
+# Only the `lite` profile. `full` takes ~20 minutes to build and wants 8 vCPU to run
+# (docs/13), which is not a sensible per-PR cost — and nothing a UI or dialogue change
+# needs is exclusive to it.
+#
+# Previews scale to zero, so an idle one costs nothing, and the service is deleted when
+# the PR closes. Cleanup is a separate job so it still runs when the PR is closed
+# unmerged.
+name: preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+# One preview per PR. Superseding is right here — the newest commit is what you want to
+# be testing — and unlike main a half-applied preview is not worth protecting.
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  PROJECT: vizij-retico
+  REGION: us-central1
+  PROFILE: lite
+
+jobs:
+  deploy:
+    # Fork PRs get a read-only token and cannot mint the OIDC credential, so this would
+    # fail anyway — but skip it explicitly rather than relying on that. A preview builds
+    # and runs the PR's code against our project; that must never be triggerable by an
+    # outside contributor.
+    if: >
+      github.event.action != 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # mint the OIDC token for Workload Identity
+      pull-requests: write # post the preview URL back onto the PR
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/86159759255/locations/global/workloadIdentityPools/github/providers/github
+          service_account: github-deployer@vizij-retico.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and push
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/vizij/vizij-retico"
+          TAG="pr-${{ github.event.pull_request.number }}-${GITHUB_SHA::7}"
+          docker build --build-arg PROFILE="${PROFILE}" --tag "${IMAGE}:${TAG}" .
+          docker push "${IMAGE}:${TAG}"
+          echo "IMAGE_TAG=${TAG}" >> "$GITHUB_ENV"
+
+      - name: Deploy preview
+        id: deploy
+        run: |
+          SERVICE="vizij-retico-pr-${{ github.event.pull_request.number }}"
+          # deploy.sh honours SERVICE and mounts whichever secrets exist, so a preview
+          # gets the same Polly/Vertex wiring as production without duplicating it here.
+          PROJECT="$PROJECT" REGION="$REGION" PROFILE="$PROFILE" SERVICE="$SERVICE" \
+            IMAGE_TAG="$IMAGE_TAG" ./scripts/deploy.sh
+          URL=$(gcloud run services describe "$SERVICE" \
+                  --project "$PROJECT" --region "$REGION" --format='value(status.url)')
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "service=$SERVICE" >> "$GITHUB_OUTPUT"
+
+      # A URL that serves errors is not a preview. Fail before advertising it.
+      - name: Smoke test
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 120 \
+                   --retry 6 --retry-delay 10 --retry-all-errors \
+                   "${{ steps.deploy.outputs.url }}/health")
+          echo "GET /health -> $code"
+          test "$code" = "200"
+
+      # One comment per PR, edited in place — a new comment on every push turns a review
+      # thread into a changelog of deploy bots.
+      - name: Comment the preview URL
+        env:
+          GH_TOKEN: ${{ github.token }}
+          URL: ${{ steps.deploy.outputs.url }}
+          SERVICE: ${{ steps.deploy.outputs.service }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          MARKER="<!-- preview-url -->"
+          # Heredoc, not a quoted multi-line string: the YAML block scalar would keep this
+          # step's indentation inside the value, and >=4 leading spaces makes GitHub render
+          # the whole comment as a code block.
+          cat > body.md <<EOF
+          $MARKER
+          **Preview:** $URL
+
+          \`lite\` profile, built from \`${GITHUB_SHA::7}\`. Scales to zero; deleted when this PR closes.
+          EOF
+          ID=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
+                 --jq "[.[] | select(.body | startswith(\"$MARKER\"))] | .[0].id // empty")
+          if [ -n "$ID" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${ID}" -F body=@body.md >/dev/null
+            echo "updated comment $ID"
+          else
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -F body=@body.md >/dev/null
+            echo "posted new comment"
+          fi
+          echo "$URL" >> "$GITHUB_STEP_SUMMARY"
+
+  teardown:
+    # Runs whether the PR merged or was abandoned; an orphaned service would otherwise
+    # sit there forever holding a public URL.
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/86159759255/locations/global/workloadIdentityPools/github/providers/github
+          service_account: github-deployer@vizij-retico.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Delete the preview service
+        run: |
+          SERVICE="vizij-retico-pr-${{ github.event.pull_request.number }}"
+          # A PR that never produced a preview (e.g. from a fork) has nothing to delete,
+          # which is not a failure.
+          if gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" >/dev/null 2>&1; then
+            gcloud run services delete "$SERVICE" --project "$PROJECT" --region "$REGION" --quiet
+            echo "deleted $SERVICE"
+          else
+            echo "no preview service for this PR"
+          fi

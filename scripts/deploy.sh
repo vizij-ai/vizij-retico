@@ -20,7 +20,9 @@ if [ "$PROFILE" = "lite" ]; then
 else
   SERVICE="${SERVICE:-vizij-retico-$PROFILE}"
 fi
-IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/vizij-retico:${PROFILE}"
+# IMAGE_TAG lets a preview deploy its own build instead of the profile tag that
+# main publishes; without it every preview would silently serve main's image.
+IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/vizij-retico:${IMAGE_TAG:-$PROFILE}"
 
 if [ -z "$PROJECT" ] || [ "$PROJECT" = "(unset)" ]; then
   echo "error: no project. Pass PROJECT=... or run: gcloud config set project PROJECT" >&2
