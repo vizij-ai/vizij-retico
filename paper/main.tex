@@ -1,0 +1,402 @@
+% vizij-retico — IROS 2026 Human-Robot Dialogue workshop (non-archival)
+% 4-page IEEE two-column systems/demonstration paper. Deadline: Aug 3, 2026.
+%
+% Build:  make        (latexmk -pdf main.tex)
+% Figures are generated from docs/figures/*.d2 — see ./Makefile.
+%
+% STATUS: sections I-III are drafted; IV-VII are scaffolded and marked \todo.
+% Every number in section V is tagged with how it was measured; anything not yet
+% measured is a \todo rather than a placeholder digit.
+
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{url}
+
+\graphicspath{{figures/}}
+
+% Visible in drafts, invisible in the final PDF: flip to \newcommand{\todo}[1]{}
+\newcommand{\todo}[1]{\textcolor{red}{\textbf{[TODO: #1]}}}
+
+\begin{document}
+
+\title{Rendering Incremental Dialogue on an Expressive Face:\\
+A retico--Vizij Bridge for Multimodal HRI}
+
+\author{\IEEEauthorblockN{Saad Elbeleidy}
+\IEEEauthorblockA{Semio\\
+saad@semio.community}
+\todo{co-authors, affiliations}}
+
+\maketitle
+
+\begin{abstract}
+Spoken dialogue with an embodied agent is not a text exchange. Humans coordinate
+conversation through a dense layer of non-verbal, incremental behavior: gaze that
+holds and averts, brows that anticipate a turn, nods and continuers that land
+\emph{during} a partner's utterance, and a face that carries the affect of what is
+being said. Most conversational stacks discard this layer, because the two
+capabilities needed to keep it live in different systems: incremental dialogue
+processing, and real-time expressive rendering.
+We present \textbf{vizij-retico}, a bridge that connects the retico incremental
+spoken-dialogue framework to Vizij, a real-time expressive 3D face, through a
+single WebSocket protocol that preserves incremental unit (IU) semantics over the
+wire and an \emph{editable} IU$\rightarrow$animation mapping. The mapping is data
+rather than code: channel targets, timings, gaze arbitration priorities, and
+emotion blends are declarative entries a practitioner can retune without touching
+driver logic. We describe the six behaviors it renders --- turn-taking posture,
+backchannels, nods, lip-sync, affect, and gaze --- and the arbitration policy that
+keeps them from fighting over the same face.
+\todo{one results sentence, once section V is measured}
+The bridge is a portable expressive layer: the same value stream targets a
+physical robot face (Quori).
+\end{abstract}
+
+\begin{IEEEkeywords}
+incremental dialogue, multimodal HRI, turn-taking, expressive agents, lip-sync
+\end{IEEEkeywords}
+
+% =====================================================================
+\section{Introduction}
+% Target: ~0.75 column. Sources: docs/01.
+% =====================================================================
+
+Conversation is incremental and multimodal. We look at a partner while they speak
+and glance away while planning a reply; we nod and murmur to signal that we are
+following; we begin to react to an utterance before it finishes; our faces carry
+affect that colors the words. Agents that wait for a complete utterance and then
+answer with text or speech alone discard all of it, and the result feels latent,
+flat, and socially inert.
+
+The workshop asks directly whether language is a sufficient modality for
+human--robot communication, and what other modalities can help. We take the
+question literally and answer it with a system. The two capabilities required are
+mature, but they live in separate worlds. \textbf{Incremental dialogue
+processing} --- emitting partial and revisable signals in real time, so that the
+system knows not only ``the user said $X$'' but ``the user is \emph{still}
+speaking,'' ``a turn shift is likely within 400\,ms,'' ``this is a good moment to
+backchannel'' --- is the domain of retico~\cite{michael2020retico}, built on the
+incremental unit model~\cite{schlangen2011iu}. \textbf{Real-time expressive
+rendering} --- a face driven continuously on many channels at once: gaze, eyelids,
+brow, jaw, per-viseme mouth shapes, emotion blends --- is the domain of Vizij.
+Neither knows about the other. retico has no viseme module and no transport to a
+renderer; Vizij has no notion of incremental dialogue.
+
+That gap is the contribution. This paper describes:
+
+\begin{itemize}
+  \item a \textbf{bridge} that fans heterogeneous IU streams into one WebSocket
+        protocol which preserves \textsc{add}/\textsc{revoke}/\textsc{commit}
+        semantics end to end (\S\ref{sec:protocol});
+  \item an \textbf{editable IU$\rightarrow$animation mapping} --- the intellectual
+        core --- that specifies channels, verbs, timings, and priorities as data
+        (\S\ref{sec:mapping});
+  \item a \textbf{gaze arbitration policy} that lets six behaviors share one face
+        without conflict, including the posture/impulse split that permits a nod
+        during sustained mutual gaze (\S\ref{sec:arbitration});
+  \item a running, deployed system with runtime-swappable perception and
+        generation backends, and an honest account of where the rendering is
+        constrained by the rig rather than by the design (\S\ref{sec:limits}).
+\end{itemize}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{00_idea.pdf}
+  \caption{The claim in one picture: incremental signals reach the face
+  \emph{during} the user's turn, not after it.}
+  \label{fig:idea}
+\end{figure}
+
+% =====================================================================
+\section{Background and Related Work}
+% Target: ~0.75 column.
+% =====================================================================
+
+\textbf{Incremental dialogue.} The incremental unit
+model~\cite{schlangen2011iu} decomposes dialogue processing into modules that
+exchange typed units with \textsc{add}, \textsc{revoke}, and \textsc{commit}
+semantics, so a consumer may react to a hypothesis and revise gracefully when it
+changes. Latency to first reaction is then bounded by the \emph{signal} rather
+than the \emph{utterance}. retico~\cite{michael2020retico} is an open-source
+realization with interchangeable ASR, TTS, LLM, and vision backends.
+
+\textbf{Turn-taking and listener signals.} Voice Activity Projection
+(VAP)~\cite{ekstedt2022vap} continuously predicts the near-future voice activity
+of both parties from audio alone, giving a running probability of an imminent
+turn shift; \cite{skantze2021review} surveys the broader problem in
+conversational systems and HRI. \todo{cite the MaAI toolkit --- verify the exact
+reference for retico-maai's VAP/backchannel/nod predictors before submission}
+Crucially these are \emph{streams}, not end-of-turn decisions, which is what
+makes rendering them mid-utterance possible at all.
+
+\textbf{Expressive agent and robot faces.} \todo{Furhat/Skantze, situated
+dialogue (Marge), social robot faces (Irfan) --- 3--4 citations, panelist-aware}
+
+\textbf{Position.} Prior work does incrementality \emph{or} expressive
+rendering. We contribute the glue that makes incremental signals drive a face
+coherently, and we contribute it as reusable infrastructure rather than as a
+one-off demo: the mapping is an artifact a practitioner edits, not a behavior
+tree we hard-coded.
+
+% =====================================================================
+\section{System}
+\label{sec:system}
+% Target: ~1.5 columns + Fig 2, 3. The core.
+% =====================================================================
+
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=0.92\textwidth]{04_pipeline.pdf}
+  \caption{The pipeline as built. Audio fans out to turn-taking and ASR in
+  parallel, so social signals lead the transcript. Every perception and
+  generation stage is a provider swappable at runtime.}
+  \label{fig:pipeline}
+\end{figure*}
+% NOTE: this is the detailed as-built diagram (docs/figures/04_pipeline.d2, 40
+% nodes). It is legible only as a full-width float. If page pressure forces it
+% back into one column, author a simplified print version rather than shrinking
+% this one -- and do not fall back to 01_architecture.d2, which is the original
+% design and disagrees with what runs.
+
+\subsection{Architecture}
+
+Figure~\ref{fig:pipeline} shows the running system. A browser captures
+microphone audio at 16\,kHz and streams PCM frames over a WebSocket. On the
+backend, a retico network fans that audio out to two consumers in
+\emph{parallel}: the turn-taking model and the recognizer. This is deliberate ---
+it is why a turn-shift signal can reach the face before a transcript exists.
+Transcripts pass through a gate (\S\ref{sec:barge}) to a streaming LLM, whose
+output is split into clauses; each clause is synthesized and shipped to the
+browser as it is produced, rather than after the reply completes. An affect
+module derives the agent's intended emotion from the same generated text and
+emits it as a first-class IU.
+
+Every perception and generation stage is a swappable provider chosen at runtime
+from the UI: recognition (browser Web Speech, Google Cloud STT, local Whisper),
+turn-taking (VAP or reply-immediately), model, synthesis, voice, and facial
+expression recognition. This matters for a systems paper in two ways: it makes
+controlled comparisons cheap, and it forces the protocol to be the only contract
+between the halves.
+
+\subsection{The protocol}
+\label{sec:protocol}
+
+\todo{tighten from docs/03. Key points: one WebSocket carries binary audio
+upstream and JSON events downstream; every event carries the originating IU's
+id and update type, so \textsc{revoke} survives the wire; versioned envelope;
+events are classified from IUs by a single bridge module rather than emitted
+ad hoc by each producer.}
+
+\subsection{The IU$\rightarrow$animation mapping}
+\label{sec:mapping}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{02_mapping.pdf}
+  \caption{IU $\rightarrow$ protocol event $\rightarrow$ face channel.}
+  \label{fig:mapping}
+\end{figure}
+
+The mapping is the policy that turns discrete, incremental, sometimes-revised
+dialogue signals into smooth, well-timed, non-conflicting facial behavior. It
+lives in one editable module that the driver interprets; the driver itself is
+generic. Five principles shape it:
+
+\begin{enumerate}
+  \item \textbf{Smoothed by default.} Expressive changes are tweens, never
+        instantaneous writes. Direct writes are reserved for resets.
+  \item \textbf{Revisable.} Applications are tracked by IU id, so a
+        \textsc{revoke} can cancel or reverse a tween still in flight. Impulses
+        that have already played are not undone.
+  \item \textbf{Arbitrated.} Shared channels obey a fixed priority; pose weights
+        compose but are capped.
+  \item \textbf{Rig-agnostic.} Targets are semantic keys resolved against the
+        live rig's declared inputs at load time. A channel the rig lacks disables
+        its entry with a warning; the rest of the mapping still runs, so
+        capabilities degrade independently.
+  \item \textbf{Tunable in one place.} Durations, easings, amplitudes,
+        thresholds, and priorities are fields, not magic numbers in the driver.
+\end{enumerate}
+
+Concretely: \texttt{turn.state} selects a posture (gaze target, brow raise,
+optional blink, tween duration) from a table keyed by state;
+\texttt{backchannel.cue} fires a brow flash of 110\,ms up and 240\,ms down;
+\texttt{nod.cue} runs a scripted oscillation; \texttt{emotion.affect} and
+\texttt{emotion.fer} resolve an emotion label to a \emph{blend} of base pose
+weights; \texttt{speech.audio} drives the mouth.
+
+The emotion blend deserves a note. The rig ships six legible base poses (happy,
+sad, anger, surprise, concerned, sleepy). Rather than restrict the agent to
+those, the mapping expresses everything else as a mixture --- fear as
+$0.6\,\textrm{surprise} + 0.5\,\textrm{concern}$, confusion as
+$0.6\,\textrm{concern} + 0.35\,\textrm{surprise}$ --- with an intensity scalar
+over the whole blend. Mirroring the user's affect is deliberately scaled to
+$0.45$: at full strength it reads as mimicry rather than empathy.
+
+\subsection{Gaze arbitration}
+\label{sec:arbitration}
+
+Gaze is the most contended resource on a face: turn posture, aversion, joint
+attention, and idle all want the eyes. A single slot is held by the highest-
+priority active intent,
+\[
+  \textrm{joint\_attention} > \textrm{aversion} > \textrm{turn} > \textrm{idle},
+\]
+and when the top intent clears, the arbiter recomputes from what remains and
+animates to the winner. Idle is the floor: micro-saccades and spontaneous blinks
+resume whenever nothing else is active. We found the spontaneous blink to be
+non-optional --- cue-driven blinks are sparse by design, and with the rig's own
+idle animation disabled so it cannot fight the driver, a face without one simply
+stares.
+
+The load-bearing detail is the \textbf{posture/impulse split}. Nods and
+backchannels are impulses that ride \emph{on top of} the current gaze posture
+without claiming the slot. This is what lets the agent nod at a clause boundary
+while holding mutual gaze, instead of a nod cancelling the attention it is meant
+to express. It is expressed in the mapping as which channels an entry claims, so
+the arbitration policy is editable along with everything else.
+
+\subsection{Lip-sync}
+
+retico's TTS emits audio, not phoneme timing, so lip-sync is a gap the bridge
+fills. Two paths: where the synthesizer returns speech
+marks, phoneme-timed viseme poses are driven directly; where it does not, jaw
+opening follows playback amplitude. The second is worse and we label it as the
+fallback rather than dressing it up.
+
+The viseme timeline holds one counter-intuitive result worth reporting, because
+it cost us a rewrite to find. A first implementation cross-faded a fixed 55\,ms
+window starting \emph{at} each phoneme's timestamp, on a clock captured before
+the audio had decoded. The mouth popped between shapes. Three separate causes
+compounded: every shape arrived late, the clock drifted from the audio and never
+re-synced, and each pose reached full weight before the next began. The fix
+anticipates --- the cross-fade \emph{starts} early enough that full weight lands
+\emph{on} the phoneme --- reads the audio element's own clock every frame, and,
+critically, gives each tween roughly four times longer than the interval until
+the next phoneme re-targets it. Weights therefore never saturate, peaking around
+20--40\%, and because each tween re-targets from the current live value the net
+effect is a first-order low-pass filter on the viseme signal. Correct-duration
+tweens produce crisp, articulate, and markedly more jarring lip-sync. Smoothness
+here is not a rendering nicety; it is the difference between speech and a
+slideshow.
+
+\subsection{Barge-in without deafness}
+\label{sec:barge}
+
+An agent that streams speech will hear itself. The obvious guard --- mute
+recognition while speaking --- also destroys barge-in, and in our first
+implementation it destroyed listening outright: the mute window was extended and
+never reset. We replaced it with \textbf{echo rejection} on text. Transcripts
+keep flowing while the agent speaks; the gate drops one only when it
+substantially overlaps what the agent is currently saying. A non-overlapping
+transcript arriving mid-reply is treated as a barge-in: queued speech is
+cancelled, the browser is told to stop playback, and the turn is processed.
+Decisions are made per utterance, never per fragment, so a dropped
+\textsc{commit} cannot leave stale words to be prepended to the user's next turn.
+
+% =====================================================================
+\section{Demonstration}
+\label{sec:demo}
+% Target: ~0.5 column + a vignette timeline figure.
+% =====================================================================
+
+\todo{Three vignettes from docs/08 --- Listener, Speaker, Empathic Mirror ---
+and which capabilities each foregrounds. These have not yet been run end to end;
+run them, then write this section and produce the timeline figure showing
+social signals landing mid-utterance.}
+
+% =====================================================================
+\section{Evaluation}
+\label{sec:eval}
+% Target: ~0.5 column + 1-2 figures. Keep claims tight and honest.
+% =====================================================================
+
+\todo{The measurements below are per-turn instrumentation captured during
+development, not the evaluation protocol in docs/09. Run the protocol, then
+replace this section. Do not ship the abstract's latency claim until it is
+backed by a measured distribution.}
+
+What we can state today, measured on the deployed configuration by streaming
+recorded speech through the live WebSocket:
+
+\begin{table}[h]
+  \centering
+  \caption{Per-turn latency, cloud configuration (Google Cloud STT,
+  Gemini 2.5 Flash Lite via Vertex AI, Google Cloud TTS).}
+  \label{tab:latency}
+  \begin{tabular}{lr}
+    \toprule
+    Stage & Latency (s) \\
+    \midrule
+    Speech end $\rightarrow$ transcript final & $\approx 0.68$ \\
+    Transcript $\rightarrow$ first LLM token  & $0.42$--$1.41$ \\
+    First token $\rightarrow$ first audible clause & \todo{measure} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Two negative results are worth reporting. First, a newer and nominally faster
+model was \emph{slower} end to end, because it is served only from a global
+endpoint whose routing cost exceeded the model's advantage --- a reminder that
+serving location dominates model choice at these latencies. Second, the
+turn-taking model runs at roughly $0.62\times$ real time even at 8 vCPU, which
+bounds what the full-perception profile can do live.
+
+\todo{Fig.~5: latency distribution. Fig.~6: time-to-first-backchannel vs. a
+turn-based baseline --- this is the key figure and the one that supports the
+paper's central claim. Fig.~7: viseme--audio offset.}
+
+% =====================================================================
+\section{Limitations and Future Work}
+\label{sec:limits}
+% Target: ~0.25 column. Be direct; reviewers reward it.
+% =====================================================================
+
+\textbf{Screen versus physical embodiment.} The face is rendered in a browser.
+The same value stream targets a physical robot face (Quori), and the mapping is
+structured so that only channel resolution changes; that port is future work,
+not a claim.
+
+\textbf{Head motion is composited, not rigged.} Nods, shakes, and tilts are
+applied as a transform on the element wrapping the face canvas rather than
+through the rig. This is worth stating plainly because the obvious diagnosis is
+wrong: the rig \emph{does} expose a whole-head transform node, but only as a
+computed value. The writable override inputs are not surfaced by the current
+runtime build, and writing the computed path holds only until the graph
+re-evaluates. The rig-native path opens as soon as the runtime exposes those
+inputs; one table and one function in the mapping would change.
+
+\textbf{We render predictions, we do not improve them.} Nod and backchannel
+timing quality is entirely inherited from the upstream predictors.
+
+\textbf{Affect is declared, not perceived.} The agent's expression comes from a
+tag the language model emits ahead of its reply, with keyword inference as a
+fallback for models that ignore the instruction. It is the agent's
+\emph{intended} affect. The camera path that would perceive the user's is
+implemented but coarse: categorical rather than dimensional, and noisy enough to
+need hysteresis.
+
+\textbf{No user study.} Every claim here is a systems claim.
+
+% =====================================================================
+\section{Conclusion}
+% =====================================================================
+
+\todo{2--3 sentences: a reusable bridge that turns incremental dialogue signals
+into coherent, well-timed multimodal facial behavior; the mapping as an editable
+artifact rather than a hard-coded behavior tree; a step toward expressive
+layers that port across embodiments.}
+
+\section*{Acknowledgments}
+\todo{}
+
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+
+\end{document}
