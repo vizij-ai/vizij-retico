@@ -1,0 +1,64 @@
+...@_brand.d2
+# Fig: a primer on the two halves, for readers who know neither.
+#
+# Left  — what retico contributes: a signal the face can act on early and still
+#         take back. That is what "incremental" means in practice, and it is also
+#         the paper's timing thesis, so one panel does both jobs.
+# Right — what Vizij contributes: a face is not a picture, it is a set of named
+#         channels, and expression is a value written to one of them.
+#
+# Framing: the robot's own sensors and the robot's own face. That this particular
+# deployment runs in a browser is an implementation detail and is left out.
+# No class names and no ADD/REVOKE/COMMIT in the boxes -- glossed in the caption.
+#
+# Layout notes, learned the hard way:
+#   * grid-columns PLUS edges between the grid's own children makes dagre
+#     re-layout and scrambles the rows. Grids here therefore have NO internal
+#     edges; sequence is carried by the numbering instead.
+#   * `style.opacity: 0` hides a container's box but does not preserve it as a
+#     layout group -- children scatter. Use a real grid, not an invisible box.
+
+
+# ELK, not the brand default of dagre: dagre spreads this graph over 5640 units
+# where ELK needs 2881, and since the figure is scaled to a fixed page width,
+# half the width means roughly double the type size. Also trims the outer pad.
+vars: {
+  d2-config: {
+    layout-engine: elk
+    pad: 10
+  }
+}
+grid-columns: 2
+grid-gap: 40
+
+retico: {
+  label: "retico · a signal the face can act on early, and still take back\nit may act on a guess, because it can also undo one"
+  class: group
+  grid-columns: 3
+  grid-gap: 16
+
+  # d2 fills a grid COLUMN-major, so these are interleaved: each pair is one
+  # column -- what was heard on top, what the face did with it underneath.
+  a1: { label: "1 · heard so far\n“is that a cat”"; class: primary }
+  b1: { label: "the brow is already\nrising, mid-word"; class: emphasis }
+  a2: { label: "2 · revised\n“cat” is withdrawn"; class: secondary }
+  b2: { label: "the rise reverses\nbefore it finished"; class: emphasis }
+  a3: { label: "3 · settled\n“is that a cap”"; class: primary }
+  b3: { label: "the reply begins"; class: emphasis }
+
+}
+
+vizij: {
+  label: "Vizij · the robot's face is a set of named channels\nexpression is one value written to one channel; the rig re-solves every frame,\nso channels compose instead of overwriting"
+  class: group
+  grid-columns: 3
+  grid-gap: 16
+
+  c1: { label: "gaze"; class: primary }
+  c2: { label: "eyelids"; class: primary }
+  c3: { label: "brow"; class: emphasis }
+  c4: { label: "head"; class: primary }
+  c5: { label: "mouth"; class: primary }
+  c6: { label: "expression"; class: primary }
+
+}

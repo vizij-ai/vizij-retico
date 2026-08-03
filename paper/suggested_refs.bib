@@ -1,0 +1,303 @@
+% =====================================================================
+% suggested_refs.bib -- RECOMMENDED ADDITIONS to refs.bib
+% ---------------------------------------------------------------------
+% These are entries I recommend adding to support the claims in
+% suggestions.tex. refs.bib is NOT modified; review each entry and copy
+% the ones you want across (or add \bibliography{refs,suggested_refs}).
+%
+% Every entry below was verified THIS SESSION. Tag meanings are exact:
+%   VERIFIED-CROSSREF = DOI, title, year, full author names (family + given),
+%                       container-title, and pages returned by the CrossRef
+%                       API for that DOI. Volume/number/issue were NOT always
+%                       returned -- where present they come from the search
+%                       result or the venue's own numbering, so spot-check
+%                       those two fields specifically.
+%   VERIFIED-PDF      = title/authors read from the arXiv PDF first page.
+%                       Journal/venue fields for these are arXiv, not a
+%                       peer-reviewed venue -- update if the paper has since
+%                       appeared in one.
+%   VERIFIED-PRIMARY  = string read from a cited paper's own reference list
+%                       (secondary attestation, not the publisher record).
+%   WEB-URL-ONLY      = URL only; bibliographic fields NOT confirmed.
+%
+% Summaries: where CrossRef exposed an abstract, the summary paraphrases it.
+% Where it did not, the summary is marked as title/venue-based -- those are
+% my characterization of the work, not the authors' words.
+% Each entry carries a DOI/URL link and a commented summary from the
+% paper's own abstract (or, where no abstract was retrievable, a
+% title-based note that says so).
+%
+% Overlap note: refs.bib currently contains ONE key, elbeleidy2026vizij
+% (the Vizij design/deployment paper). That key is NOT redefined here to
+% avoid a collision -- suggestions.tex's \cite{elbeleidy2026vizij}
+% resolves to your refs.bib entry.
+%
+% The four keys michael2020retico, schlangen2011iu, skantze2021review,
+% and ekstedt2022vap were present in an earlier refs.bib and are no longer
+% there; they are re-supplied below (verified) under the same key names so
+% they slot straight back in.
+% =====================================================================
+
+% ---------- Systems: retico (core + on robots) ----------
+
+% [VERIFIED-CROSSREF] doi:10.18653/v1/2020.sigdial-1.6
+% DOI: https://doi.org/10.18653/v1/2020.sigdial-1.6
+% Summary: Introduces retico, the Python incremental spoken-dialogue framework
+%   built on the Incremental Unit model. Primary system citation for retico.
+%   NOTE: this is the SIGdial 2020 paper; an earlier refs.bib listed
+%   michael2020retico as the ESSV paper -- confirm which venue you intend.
+%   Author given name, container-title, and pages confirmed via CrossRef.
+%   [Abstract not exposed by CrossRef; summary is title/venue-based.]
+@inproceedings{michael2020retico,
+  author    = {Michael, Thilo},
+  title     = {Retico: An Incremental Framework for Spoken Dialogue Systems},
+  booktitle = {Proceedings of the 21th Annual Meeting of the Special Interest Group on Discourse and Dialogue},
+  pages     = {49--52},
+  year      = {2020},
+  doi       = {10.18653/v1/2020.sigdial-1.6}
+}
+
+% ---------- Systems: retico on robots ----------
+
+% [VERIFIED-CROSSREF] doi:10.18653/v1/2020.sigdial-1.17
+% DOI: https://doi.org/10.18653/v1/2020.sigdial-1.17
+% Summary: Extends retico toward robots -- a modular, multimodal, distributed,
+%   incremental, and time-aligned spoken-dialogue system for HRI. Key citation
+%   for "retico is robot-ready." Full author names, container-title, and pages
+%   confirmed via CrossRef. NOTE: the fourth author is "Jake Carns" (an earlier
+%   draft of this file said "Jack" -- corrected).
+%   [Abstract not exposed by CrossRef; summary is title/venue-based.]
+@inproceedings{kennington2020rrsds,
+  author    = {Kennington, Casey and Moro, Daniele and Marchand, Lucas and Carns, Jake and McNeill, David},
+  title     = {rrSDS: Towards a Robot-Ready Spoken Dialogue System},
+  booktitle = {Proceedings of the 21th Annual Meeting of the Special Interest Group on Discourse and Dialogue},
+  pages     = {132--135},
+  year      = {2020},
+  doi       = {10.18653/v1/2020.sigdial-1.17}
+}
+
+% [VERIFIED-CROSSREF] doi:10.1145/3765766.3765884
+% DOI: https://doi.org/10.1145/3765766.3765884
+% Summary: Recent framing of retico as a framework for robot- and
+%   intelligent-virtual-agent-ready spoken dialogue. Full author names,
+%   container-title, and pages confirmed via CrossRef. NOTE: the second author
+%   is "Catherine Henry" (an earlier draft of this file said "Cody" --
+%   corrected). Pages 575--576 indicate a short/late-breaking contribution.
+%   [Abstract not exposed by CrossRef; summary is title/venue-based.]
+@inproceedings{kennington2025retico,
+  author    = {Kennington, Casey and Henry, Catherine},
+  title     = {Retico: A Framework for Robot/IVA-ready Spoken Dialogue},
+  booktitle = {Proceedings of the 13th International Conference on Human-Agent Interaction},
+  pages     = {575--576},
+  year      = {2025},
+  doi       = {10.1145/3765766.3765884}
+}
+
+% ---------- Incremental processing / responsiveness ----------
+
+% [VERIFIED-PRIMARY] string read from the reference list of Kohn 2018
+%   (arXiv:1805.12518). No DOI -- it is a monograph.
+% Summary: Foundational psycholinguistic account of speech production: speakers
+%   perform conceptualization, formulation, and articulation incrementally and
+%   in parallel rather than planning whole utterances before speaking.
+%   Anchors the production half of "dialogue is incremental."
+@book{levelt1989speaking,
+  author    = {Levelt, Willem J. M.},
+  title     = {Speaking: From Intention to Articulation},
+  publisher = {The MIT Press},
+  address   = {Cambridge, MA},
+  year      = {1989}
+}
+
+% [VERIFIED-CROSSREF + VERIFIED-PRIMARY]  (ref list of Kohn 2018)
+% DOI: https://doi.org/10.1126/science.7777863
+% Summary: Visual-world eye-tracking evidence that listeners integrate visual
+%   context with the unfolding speech signal in real time -- foundational
+%   support for "humans process language incrementally."
+@article{tanenhaus1995integration,
+  author  = {Tanenhaus, Michael K. and Spivey-Knowlton, Michael J. and Eberhard, Kathleen M. and Sedivy, Julie C.},
+  title   = {Integration of Visual and Linguistic Information in Spoken Language Comprehension},
+  journal = {Science},
+  volume  = {268},
+  number  = {5217},
+  pages   = {1632--1634},
+  year    = {1995},
+  doi     = {10.1126/science.7777863}
+}
+
+% [VERIFIED-CROSSREF (doi .106) + VERIFIED-PRIMARY]
+% DOI: https://doi.org/10.5087/dad.2011.106
+% Summary: Defines metrics for incremental processors, which must accept
+%   partial and revisable input while producing output that is both accurate
+%   and low-latency. Grounds the "incremental systems are more responsive"
+%   claim. (Note: this is dad.2011.106; dad.2011.105 is the Schlangen &
+%   Skantze IU paper you already cite as schlangen2011iu.)
+@article{baumann2011evaluation,
+  author  = {Baumann, Timo and Bu{\ss}, Okko and Schlangen, David},
+  title   = {Evaluation and Optimisation of Incremental Processors},
+  journal = {Dialogue \& Discourse},
+  volume  = {2},
+  number  = {1},
+  pages   = {113--141},
+  year    = {2011},
+  doi     = {10.5087/dad.2011.106},
+  note    = {Special Issue on Incremental Processing in Dialogue}
+}
+
+% [VERIFIED-PDF] arXiv:1805.12518 (first page)
+% DOI: https://doi.org/10.48550/arXiv.1805.12518
+% Summary: Survey of incremental NLP -- argues incrementality is ubiquitous in
+%   human interaction and beneficial for HCI, and reviews shared challenges,
+%   strategies, and evaluation across incremental systems.
+@article{kohn2018incremental,
+  author        = {K{\"o}hn, Arne},
+  title         = {Incremental Natural Language Processing: Challenges, Strategies, and Evaluation},
+  journal       = {arXiv preprint arXiv:1805.12518},
+  year          = {2018},
+  eprint        = {1805.12518},
+  archivePrefix = {arXiv},
+  doi           = {10.48550/arXiv.1805.12518}
+}
+
+% [VERIFIED-PDF] arXiv:2006.06026 (first page: Eskenazi et al.)
+% DOI: https://doi.org/10.48550/arXiv.2006.06026
+% Summary: NSF Future Directions report on user-oriented agents; argues
+%   human-like responsiveness/flexibility requires processing information
+%   incrementally rather than in utterance-sized chunks, and that agents must
+%   choose between verbal and non-verbal feedback (e.g. a head nod).
+@techreport{eskenazi2020nsf,
+  author        = {Eskenazi, Maxine and others},
+  title         = {Report from the {NSF} Future Directions Workshop, Toward User-Oriented Agents: Research Directions and Challenges},
+  institution   = {arXiv},
+  year          = {2020},
+  number        = {arXiv:2006.06026},
+  eprint        = {2006.06026},
+  archivePrefix = {arXiv},
+  doi           = {10.48550/arXiv.2006.06026}
+}
+
+% [VERIFIED-PDF] arXiv:2501.00953 (first page: Casey Kennington)
+% DOI: https://doi.org/10.48550/arXiv.2501.00953
+% Summary: Argues current language models are not fully incremental -- their
+%   processing is monotonic and cannot revise interpretations/output as input
+%   unfolds -- which limits responsiveness for robots. Directly supports the
+%   "LLMs operate at sentence level" motivation.
+@article{kennington2025prior,
+  author        = {Kennington, Casey and others},
+  title         = {Prior Lessons of Incremental Dialogue and Robot Action Management for the Age of Language Models},
+  journal       = {arXiv preprint arXiv:2501.00953},
+  year          = {2025},
+  eprint        = {2501.00953},
+  archivePrefix = {arXiv},
+  doi           = {10.48550/arXiv.2501.00953},
+  note          = {Also circulated as "Incremental Dialogue Management: Survey, Discussion, and Implications for HRI"}
+}
+
+% ---------- Incremental dialogue model & turn-taking ----------
+
+% [VERIFIED-CROSSREF] doi:10.5087/dad.2011.105
+% DOI: https://doi.org/10.5087/dad.2011.105
+% Summary: The Incremental Unit (IU) framework -- an abstract model of
+%   incremental dialogue processing in which modules exchange revisable units
+%   of information. The theoretical backbone retico implements. (Was
+%   schlangen2011iu in an earlier refs.bib.)
+@article{schlangen2011iu,
+  author  = {Schlangen, David and Skantze, Gabriel},
+  title   = {A General, Abstract Model of Incremental Dialogue Processing},
+  journal = {Dialogue \& Discourse},
+  volume  = {2},
+  number  = {1},
+  pages   = {83--111},
+  year    = {2011},
+  doi     = {10.5087/dad.2011.105}
+}
+
+% [VERIFIED-CROSSREF] doi:10.1016/j.csl.2020.101178
+% DOI: https://doi.org/10.1016/j.csl.2020.101178
+% Summary: Review of turn-taking in conversational systems and HRI -- models
+%   and mechanisms for deciding when to speak, yield, and give feedback.
+%   Supports the "turn-taking is central to bidirectional dialogue" claim.
+%   (Was skantze2021review in an earlier refs.bib.) [Title-based; abstract not
+%   retrieved via CrossRef.]
+@article{skantze2021review,
+  author  = {Skantze, Gabriel},
+  title   = {Turn-taking in Conversational Systems and Human-Robot Interaction: A Review},
+  journal = {Computer Speech \& Language},
+  volume  = {67},
+  pages   = {101178},
+  year    = {2021},
+  doi     = {10.1016/j.csl.2020.101178}
+}
+
+% [VERIFIED-CROSSREF] doi:10.21437/interspeech.2022-10955
+% DOI: https://doi.org/10.21437/interspeech.2022-10955
+% Summary: Voice Activity Projection (VAP): self-supervised model that predicts
+%   upcoming turn-taking events continuously from the speech signal -- a
+%   concrete incremental turn-taking predictor. (Was ekstedt2022vap in an
+%   earlier refs.bib.) [Title-based; abstract not retrieved via CrossRef.]
+@inproceedings{ekstedt2022vap,
+  author    = {Ekstedt, Erik and Skantze, Gabriel},
+  title     = {Voice Activity Projection: Self-supervised Learning of Turn-taking Events},
+  booktitle = {Proc. Interspeech},
+  year      = {2022},
+  doi       = {10.21437/interspeech.2022-10955}
+}
+
+% ---------- Nonverbal / expressive behavior ----------
+
+% [VERIFIED-CROSSREF] doi:10.5898/JHRI.6.1.Admoni
+% DOI: https://doi.org/10.5898/JHRI.6.1.Admoni
+% Summary: Review of social eye gaze in HRI -- how robot gaze functions as a
+%   nonverbal cue that augments and extends speech, supports joint attention,
+%   and regulates interaction. [Title-based; abstract not retrieved.]
+@article{admoni2017social,
+  author  = {Admoni, Henny and Scassellati, Brian},
+  title   = {Social Eye Gaze in Human-Robot Interaction: A Review},
+  journal = {Journal of Human-Robot Interaction},
+  volume  = {6},
+  number  = {1},
+  pages   = {25--63},
+  year    = {2017},
+  doi     = {10.5898/JHRI.6.1.Admoni}
+}
+
+% [VERIFIED-CROSSREF] doi:10.1145/3570169
+% DOI: https://doi.org/10.1145/3570169
+% Summary: Reviews nonverbal cues in HRI from a communication-studies
+%   perspective, treating nonverbal codes (gaze, gesture, expression, proxemics)
+%   as a system that carries social meaning alongside speech. Supports "words
+%   alone are insufficient" and "dialogue must align with appearance."
+@article{urakami2023nonverbal,
+  author  = {Urakami, Jacqueline and Seaborn, Katie},
+  title   = {Nonverbal Cues in Human--Robot Interaction: A Communication Studies Perspective},
+  journal = {ACM Transactions on Human-Robot Interaction},
+  year    = {2023},
+  doi     = {10.1145/3570169}
+}
+
+% [VERIFIED-CROSSREF]  (Skantze co-author)
+% DOI: https://doi.org/10.3389/frobt.2023.1127626
+% Summary: In the authors' own words, gaze cues are used to manage turn-taking,
+%   coordinate joint attention, regulate intimacy, and signal cognitive effort;
+%   the study tests whether a robot's gaze aversion affects human gaze aversion.
+@article{mishra2023gaze,
+  author  = {Mishra, Chinmaya and Offrede, Tom and Fuchs, Susanne and Mooshammer, Christine and Skantze, Gabriel},
+  title   = {Does a Robot's Gaze Aversion Affect Human Gaze Aversion?},
+  journal = {Frontiers in Robotics and AI},
+  volume  = {10},
+  year    = {2023},
+  doi     = {10.3389/frobt.2023.1127626}
+}
+
+% [VERIFIED-CROSSREF] doi:10.1016/j.apergo.2023.103967
+% DOI: https://doi.org/10.1016/j.apergo.2023.103967
+% Summary: Empirical study finding that a robot's emotional expressions and
+%   contextual cues affect perceived anthropomorphic trustworthiness. Supports
+%   "expression shapes trust/engagement." [Title-based; abstract not retrieved.]
+@article{song2023robot,
+  author  = {Song, Yao and Tao, Da and Luximon, Yan},
+  title   = {In Robot We Trust? The Effect of Emotional Expressions and Contextual Cues on Anthropomorphic Trustworthiness},
+  journal = {Applied Ergonomics},
+  year    = {2023},
+  doi     = {10.1016/j.apergo.2023.103967}
+}

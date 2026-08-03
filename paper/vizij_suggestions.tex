@@ -1,0 +1,573 @@
+% =====================================================================
+% vizij_suggestions.tex  --  ANNOTATED COPY of main.tex
+% ---------------------------------------------------------------------
+% This file DUPLICATES main.tex and layers recommended edits on top.
+% main.tex is never modified. Review each change and copy across what
+% you accept.
+%
+% Convention (same as the existing paper/suggestions.tex):
+%   % SUGGESTION: <what and why>   -> explains the edit that follows
+%   % ORIGINAL:   <text>           -> the line as it stands in main.tex
+%   % WHY-CITE:   <key> -- <what that paper establishes>
+%   Your own sentences are kept VERBATIM as the lead sentence of their
+%   paragraph and are never reworded; supporting sentences are added
+%   beneath them.
+%
+% CITATION KEYS. Everything cited here resolves in one of three files:
+%   refs.bib                  elbeleidy2026vizij
+%   suggested_refs.bib        the incremental-dialogue side (michael2020retico,
+%                             schlangen2011iu, admoni2017social, ...)
+%   vizij_suggested_refs.bib  the 42 rendered-face / expressive-agent
+%                             entries added this session, all resolved via
+%                             OpenAlex and re-fetched from Crossref
+% No key is invented, and no key collides across the three files.
+%
+% RELATIONSHIP TO paper/suggestions.tex. That file is the earlier
+% annotated copy covering the dialogue-side citations. This one layers the
+% rendered-face literature on top of the same scaffold. Where both touch a
+% paragraph, this file's version supersedes -- it keeps that file's
+% additions and adds citations to them.
+%
+% NOTE ON init_draft.tex. Several findings apply to sections that exist
+% only in init_draft.tex (gaze arbitration, lip-sync, the IU->animation
+% mapping). Those are marked
+%   % FOR-INIT-DRAFT: <section> -- <what to do there>
+% so they are not lost when the two drafts converge.
+%
+% Build:  pdflatex vizij_suggestions && bibtex vizij_suggestions && \
+%         pdflatex vizij_suggestions && pdflatex vizij_suggestions
+% =====================================================================
+
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+% The preceding line is only needed to identify funding in the first footnote. If that is unneeded, please comment it out.
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\begin{document}
+
+% \title{Vizij x Retico: A system proposal for incrementally adaptive expressive robot faces \\
+% {\footnotesize \textsuperscript{*}Note: Sub-titles are not captured in Xplore and
+% should not be used}
+% \thanks{Identify applicable funding agency here. If none, delete this.}
+% }
+% \title{Vizij x Retico: Integrating Incremental Spoken Dialogue with Expressive Robot Faces}
+\title{Vizij × Retico: A System Architecture for Driving Expressive Robot Faces from Incremental Dialogue}
+
+% \author{\IEEEauthorblockN{1\textsuperscript{st} Given Name Surname}
+% \IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+% \textit{name of organization (of Aff.)}\\
+% City, Country \\
+% email address or ORCID}
+% \and
+% \IEEEauthorblockN{2\textsuperscript{nd} Given Name Surname}
+% \IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+% \textit{name of organization (of Aff.)}\\
+% City, Country \\
+% email address or ORCID}
+% \and
+% \IEEEauthorblockN{3\textsuperscript{rd} Given Name Surname}
+% \IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+% \textit{name of organization (of Aff.)}\\
+% City, Country \\
+% email address or ORCID}
+% \and
+% \IEEEauthorblockN{4\textsuperscript{th} Given Name Surname}
+% \IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+% \textit{name of organization (of Aff.)}\\
+% City, Country \\
+% email address or ORCID}
+% \and
+% \IEEEauthorblockN{5\textsuperscript{th} Given Name Surname}
+% \IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+% \textit{name of organization (of Aff.)}\\
+% City, Country \\
+% email address or ORCID}
+% \and
+% \IEEEauthorblockN{6\textsuperscript{th} Given Name Surname}
+% \IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+% \textit{name of organization (of Aff.)}\\
+% City, Country \\
+% email address or ORCID}
+% }
+
+\maketitle
+
+% =====================================================================
+% SUGGESTION (Abstract): main.tex leaves this empty. Draft below, ~150
+% words. The framing to keep is the one the literature supports and the
+% competitors do not occupy: not "open source" and not "LLM-driven
+% expression" -- both already exist -- but INCREMENTALITY. Xpress
+% (antony2025xpress), Expressive Furhat (expressivefurhat2026) and
+% Fluid-Xpress (fluidxpress2026) all generate expression from completed
+% dialogue state. None consumes revisable partial signals. Say so.
+% =====================================================================
+\begin{abstract}
+Effective human--robot interaction is both multimodal and incremental, yet
+these two properties are usually pursued in isolation: expressive-face
+systems render gaze and emotion without a real-time dialogue signal to drive
+them, while incremental dialogue systems rarely expose their word-level state
+to an expressive output layer. We present a system architecture that
+integrates \textit{retico}~\cite{michael2020retico}, an incremental framework
+for real-time spoken dialogue and robot control, with
+\textit{Vizij}~\cite{elbeleidy2026vizij}, an open-source framework for
+designing, animating, and deploying expressive rendered robot faces. In the
+integrated system, retico's Incremental Units drive Vizij's gaze, viseme, and
+emotion channels as speech unfolds, so the face can articulate, signal
+uncertainty, and manage turn-taking in step with the dialogue rather than
+after it. Recent systems generate robot facial expression from language
+models, but do so from completed dialogue state; we render revisable partial
+signals mid-utterance. We describe the integration, what it enables for
+bidirectional interaction, and open questions for evaluating expressive
+incremental dialogue.
+\end{abstract}
+
+\begin{IEEEkeywords}
+expressive rendered faces, incremental dialogue, social robots
+\end{IEEEkeywords}
+
+\section{Introduction}
+
+% =====================================================================
+% SUGGESTION (Introduction): your paragraph is kept VERBATIM. Three
+% citations are added at first mention, and one sentence is appended.
+%
+% WHY-CITE: michael2020retico -- anchors retico on first mention.
+% WHY-CITE: elbeleidy2026vizij -- the UR-RAD paper this work builds on.
+% WHY-CITE: elbeleidy2026tutorial -- the HRI 2026 workshop-tutorial
+%   companion record. Cite both Vizij anchors together so a reader can
+%   find the ecosystem's own documentation.
+% =====================================================================
+Effective Human–Robot Interaction (HRI) must move beyond a unidirectional, listen-and-act paradigm toward genuinely bidirectional dialogue. For safe, trustworthy, and engaging interactions, robots must not only interpret instructions but also ask clarifying questions, signal uncertainty, take turns, explain their behavior, and align with human intent. This work contributes directly to that goal by pairing two open-source systems that together span the full loop such interactions require: (1) retico, an incremental framework for real-time spoken dialogue and robot control, which determines \textit{what} the robot communicates and when~\cite{michael2020retico}; and (2) Vizij, a framework for designing, animating, and deploying expressive rendered robot faces, which determines \textit{how} that communication appears—through gaze, visemes, and emotional expression~\cite{elbeleidy2026vizij,elbeleidy2026tutorial}.
+
+% SUGGESTION: add this sentence to close the introduction. It is the
+% strongest external support available for the paper's premise, and it is
+% currently missing.
+%
+% WHY-CITE: coexpression2024 -- Science Robotics 2024. Anticipatory facial
+%   co-expression: a robot face that begins forming before the eliciting
+%   event completes, rather than reacting after it. This makes your
+%   "during the turn, not after it" claim someone else's finding too,
+%   which is much stronger than asserting it alone.
+Timing is the crux. Expression that arrives after a turn completes is not
+merely late; anticipatory co-expression, in which a face begins to form
+before the eliciting event finishes, has been shown to be both achievable
+and preferable on robot faces~\cite{coexpression2024}. An architecture that
+renders only completed dialogue state cannot produce it.
+
+\section{Motivation}
+
+% =====================================================================
+% SUGGESTION (Motivation): your sentence is the section's governing
+% thesis and is kept VERBATIM as the lead sentence. Support follows.
+% (This paragraph is carried over from paper/suggestions.tex unchanged --
+% it needed no citations and still does not.)
+%
+% ORIGINAL:
+%   Effective Human-Robot Interaction is multimodal and incremental.
+% =====================================================================
+Effective Human-Robot Interaction is multimodal and incremental. These two
+properties are usually pursued separately: expressive-face systems render
+gaze and emotion without a real-time dialogue signal to drive them, while
+incremental dialogue systems rarely expose their word-level state to an
+expressive output layer. Interaction that is responsive in time but mute in
+the face---or expressive in the face but lagging a turn behind---fails in the
+same way, because a human partner reads timing and expression together. The
+remainder of this section develops each property in turn, and the system we
+propose is the claim that they must be satisfied by one architecture rather
+than two.
+
+
+\subsection{Robot Expressivity \& Vizij}
+
+% =====================================================================
+% SUGGESTION: main.tex has three stub lines here. Your two content
+% sentences are kept VERBATIM as leads; the \textbf{Vizij:} stub is
+% filled. One new paragraph is added afterwards to place the work in the
+% rendered-face literature, which the draft currently does not cite at
+% all -- this is the largest citation gap on the expressivity side.
+%
+% ORIGINAL lines:
+%   Dialogue must align with the robot's appearance and expression.
+%   Expressivity can include a robot face that expresses gaze, visemes, and emotions effectively and in sync.
+%   \textbf{Vizij:}
+% =====================================================================
+Dialogue must align with the robot's appearance and expression. What the
+robot says is only part of the message, and a face that is silent or mistimed
+undercuts the spoken content.
+
+Expressivity can include a robot face that expresses gaze, visemes, and emotions effectively and in sync. Each of these three channels carries a
+distinct communicative load. Gaze manages turn-taking, joint attention, and
+participant footing~\cite{admoni2017social,mutlu2009footing}; visemes make
+speech legible as articulation rather than as a moving
+mouth~\cite{edwards2016jali}; and affect displays shape how the interaction is
+read overall.
+
+% WHY-CITE: kalegina2018facespace -- surveys rendered robot faces and
+%   relates feature choices (eyes, pupils, brows, mouth, detail level) to
+%   perceived attributes. This is the reference a rendered-face paper is
+%   expected to engage, and it gives you a concrete way to state what a
+%   given rig can and cannot express.
+% WHY-CITE: screens2026, longface2026 -- HRI 2026 and CHIRA 2026. Extend
+%   the design space to the screen itself: proportion, orientation, and
+%   the display as an information surface all change perception.
+% WHY-CITE: hyperrealistic2026 -- 2026 review of hyper-realistic PHYSICAL
+%   robot heads. This is the alternative a rendered-face position argues
+%   against; naming the trade-off is better than omitting it silently.
+Rendered faces occupy a design space that has been characterised
+empirically, relating eye, brow, and mouth features to perceived
+attributes~\cite{kalegina2018facespace}; recent work extends that space to
+the display itself, showing that screen proportion and orientation are design
+variables rather than neutral
+substrate~\cite{screens2026,longface2026}. Rendered faces trade the physical
+realism pursued by animatronic heads~\cite{hyperrealistic2026} for
+reconfigurability: a face defined as data can be edited, versioned, and
+retargeted, which is the property this work depends on.
+
+% SUGGESTION: the \textbf{Vizij:} stub, filled.
+\textbf{Vizij} is an open-source ecosystem for designing, animating, and
+deploying rendered robot faces, with modular controllers for gaze, visemes,
+and emotional expression that are portable across robot
+platforms~\cite{elbeleidy2026vizij,elbeleidy2026tutorial}.
+
+\subsection{Effective Human-Robot Spoken Dialogue}
+
+% =====================================================================
+% SUGGESTION: main.tex has three stub lines. The contrast is good and
+% worth keeping punchy; expanded just enough to be citable and precise.
+% (Carried over from paper/suggestions.tex.)
+%
+% ORIGINAL lines:
+%   Dialogue is incremental.
+%   LLMs are not.
+%   \textbf{Retico:} addresses this.
+% =====================================================================
+Dialogue is incremental. Understanding and production proceed word-by-word,
+enabling fast feedback, overlap, and repair.
+
+LLMs are not. They typically operate at the sentence or multi-sentence level,
+which limits the responsiveness that real-time speech interaction
+demands~\cite{kennington2025prior}.
+
+\textbf{Retico} addresses this by realizing the incremental unit framework as
+a modular, real-time pipeline: ASR, NLU, dialogue management, NLG, and TTS
+exchange incremental units, so the system can act on partial input and revise
+as evidence arrives~\cite{michael2020retico,schlangen2011iu}.
+
+% =====================================================================
+% SUGGESTION: add this subsection. Without it, the paper does not say
+% what already exists, and a reviewer from HRI or the agents community
+% will read the omission as unawareness rather than as novelty. Three
+% short paragraphs; trim to one if space is tight, but keep the third.
+% =====================================================================
+\subsection{What already exists}
+
+% WHY-CITE: alvesoliveira2022flexsdk -- FLEX-SDK builds a social robot from
+%   two tablet screens: face design, expression authoring, Wizard-of-Oz
+%   control, text-based scripting. This is the NEAREST PRIOR ART for
+%   open-source rendered-face tooling and the comparison reviewers will
+%   ask for. Differentiating on "open source" will not survive it.
+% WHY-CITE: almoubayed2012furhat -- the reference back-projected rendered
+%   face platform; both HRI 2026 systems below build on it.
+Open-source tooling for rendered faces is not new. FLEX-SDK supports face
+design, expression authoring, Wizard-of-Oz control, and
+scripting~\cite{alvesoliveira2022flexsdk}, and Furhat has served as a
+back-projected rendered-face platform for over a
+decade~\cite{almoubayed2012furhat}.
+
+% WHY-CITE: antony2025xpress -- HRI 2025. Generates context-aware robot
+%   facial expressions with language models; opens on the SAME
+%   fragmentation complaint as the Vizij UR-RAD paper.
+% WHY-CITE: expressivefurhat2026, fluidxpress2026 -- both appeared at the
+%   HRI 2026 workshop the Vizij team hosted. Immediate conversation
+%   partners, not distant related work.
+% WHY-CITE: hasumoto2023llmemotion -- the earlier real-time LLM emotion
+%   generation result these extend.
+Neither is language-model-driven expression. Recent systems generate robot
+facial expression from language models, either per interaction
+context~\cite{antony2025xpress} or during live
+dialogue~\cite{expressivefurhat2026,fluidxpress2026,hasumoto2023llmemotion}.
+
+% SUGGESTION: this is the paragraph that positions the contribution. It is
+% the one to keep if the subsection has to shrink.
+What distinguishes the present work is neither of those properties but
+incrementality. Each of these systems consumes completed dialogue state: an
+utterance, a turn, or a context, resolved before an expression is chosen.
+None consumes revisable partial signals, and so none can render a listener
+response while the user is still speaking. That is the gap this integration
+fills.
+
+% SUGGESTION (optional, one sentence): bound the scope of what you are
+% not attempting, so a reviewer does not supply the comparison for you.
+%
+% WHY-CITE: generativenonverbal2026 -- 2026 survey of generative nonverbal
+%   facial behavior for highly realistic embodied agents.
+% WHY-CITE: hu2026liplearning -- Science Robotics 2026, learned lip motion
+%   on humanoid face robots. The current frontier for robot lip-sync.
+% We do not attempt photorealistic or learned facial
+% synthesis~\cite{generativenonverbal2026,hu2026liplearning}; our target is a
+% stylised, authorable face whose channels a designer can inspect and edit.
+
+
+\section{Proposal: Vizij x Retico}
+
+% =====================================================================
+% SUGGESTION: main.tex leaves this section empty. Scaffold below names
+% the integration seam concretely. Fill the itemised entries with the
+% actual module and message design.
+% =====================================================================
+The integration treats Vizij's expressive channels as retico output modules
+driven by Incremental Units:
+\begin{itemize}
+  \item \textbf{Visemes / lip-sync:} retico's incremental (TTS- or
+        ASR-aligned) stream emits viseme IUs; Vizij's viseme controller
+        renders them frame-accurately, so the face articulates \emph{as}
+        speech is produced rather than after a full turn.
+  \item \textbf{Emotion / affect:} dialogue-state or policy IUs carry an
+        affective label and intensity mapped onto Vizij's emotion rig;
+        because IUs are revisable, a mid-utterance change in affect
+        re-renders on the face.
+  \item \textbf{Gaze:} turn-management and attention signals from retico
+        drive Vizij's gaze controller (e.g.\ avert while holding the floor,
+        re-establish mutual gaze to yield).
+\end{itemize}
+
+% =====================================================================
+% SUGGESTION: add this paragraph. It is the single largest citation gap
+% in either draft. The IU->animation mapping IS a multimodal behavior
+% representation, and the intelligent-virtual-agents community
+% standardised one twenty years ago. A reviewer from that community will
+% notice its absence immediately.
+%
+% WHY-CITE: kopp2006bml -- the Behavior Markup Language. Specifies agent
+%   behavior with explicit cross-modal synchronization points.
+% WHY-CITE: welbergen2009elckerlyc -- BML realizer built for CONTINUOUS
+%   interaction with tight temporal coordination and for behavior plans
+%   that change while running. This is the closest published match to
+%   your revisability-under-REVOKE requirement.
+% WHY-CITE: thiebaux2008smartbody -- hierarchically connected controllers
+%   composing on a shared body; prior art for channel composition.
+% WHY-CITE: cassell2004beat -- text-to-behavior authoring; the precedent
+%   for deriving affect from generated text.
+%
+% CAUTION: the last sentence below is a claim about BML's semantics.
+% Check it against your implementation before shipping -- if the mapping
+% is closer to BML than this implies, weaken it accordingly.
+% =====================================================================
+Multimodal behavior representation is not a new problem. The Behavior Markup
+Language specifies agent behavior with explicit cross-modal synchronization
+points~\cite{kopp2006bml}, and its realizers address plan revision during
+execution~\cite{welbergen2009elckerlyc}, controller composition on a shared
+body~\cite{thiebaux2008smartbody}, and derivation of nonverbal behavior from
+text~\cite{cassell2004beat}. Our mapping departs from that lineage in one
+respect the incremental setting forces: BML plans are behavior
+\emph{requests} scheduled against a timeline, whereas an IU stream supplies
+signals that may be revoked after rendering has already begun. Revisability
+is therefore a property of the applied animation rather than of the plan.
+
+% SUGGESTION: state the emotion control basis explicitly. A reviewer will
+% otherwise ask which one you chose.
+%
+% WHY-CITE: russell1980circumplex -- continuous valence/arousal.
+% WHY-CITE: ekman1978facs -- discrete action units.
+%   These are the two established bases. A set of authored base poses
+%   composed by weight is a third position; naming it pre-empts the
+%   question.
+An expression rig must commit to a control basis. The two established
+choices are a continuous affect space~\cite{russell1980circumplex} and an
+action-unit decomposition~\cite{ekman1978facs}; Vizij's rig sits between
+them, exposing legible authored poses that are composed continuously at
+runtime.
+
+% SUGGESTION: add a system-architecture figure here (figures/ exists in
+% the repo). A block diagram of the IU network -> Vizij controllers would
+% carry this section.
+
+% ---------------------------------------------------------------------
+% FOR-INIT-DRAFT: Sec. III-D (Gaze arbitration). That section is the
+% strongest in the longer draft and is currently uncited. Every element
+% has a precedent:
+%   admoni2017social, mutlu2009footing -- why gaze is contended: it
+%       carries turn management, attention, and participant footing at
+%       once. Grounds the "most contended resource" claim.
+%   andrist2014aversion -- a published conversational gaze-aversion model
+%       WITH timing. Cite it or state how your aversion intent differs.
+%   kipp2015gazeattention -- prior art for arbitrating competing
+%       attention demands on an agent.
+%   pejsa2013stylizedgaze -- stylized/performative gaze from character
+%       animation; the model that transfers to non-anatomical eyes.
+%   ribeiro2019nutty -- layered robot animation. Your posture/impulse
+%       split is layered composition; this is its precedent.
+%   ribeiro2017erik -- expressive posture solved against a task
+%       constraint in one solver: the same shape as the gaze slot.
+%   schoen2023lively -- arbitrating communicative against task objectives
+%       in real time.
+% AUTHORSHIP: schoen2023lively, ribeiro2019nutty and ribeiro2017erik are
+%   by Vizij co-authors. Write "this follows our earlier work on ..."
+%   rather than citing them as independent corroboration. Reviewers check.
+%
+% FOR-INIT-DRAFT: Sec. III-D (the spontaneous blink). "A face without one
+% simply stares" is exactly the illusion-of-life argument
+% (ribeiro2012illusion), and animation principles have been shown to
+% measurably improve legibility of robot intent (gielniak2011readability).
+% Those two citations upgrade the idle-motion choice from taste to a
+% legibility claim.
+%
+% FOR-INIT-DRAFT: Sec. III (the mapping as "an artifact a practitioner
+% edits"). hoffman2014movement is the methodological precedent for
+% treating movement design as a designer-facing activity.
+%
+% FOR-INIT-DRAFT: Sec. III-E (lip-sync). The anticipatory cross-fade
+% result is the best engineering finding in either draft and it is
+% currently written as a bug fix. It is anticipation and slow-in/slow-out
+% (lasseter1987principles) rediscovered under a real-time constraint --
+% framing it that way makes it a contribution. What remains genuinely
+% novel is the inversion: correctly timed, fully saturated transitions are
+% LESS legible than deliberately under-damped ones. Also cite
+% edwards2016jali (animator-centric viseme model on independent jaw/lip
+% axes -- the right abstraction for a non-anatomical mouth, and the
+% comparison for your pose set) and zhou2018visemenet (audio -> viseme
+% parameters; the published answer to "retico's TTS emits audio, not
+% phoneme timing", worth one clause when labelling the amplitude path as
+% the fallback). The learned end-to-end line
+% (karras2017audiodriven, cudeiro2019voca, fan2022faceformer) solves the
+% same temporal-smoothing problem with a model rather than a filter; one
+% sentence is enough and it strengthens the low-pass observation.
+% ---------------------------------------------------------------------
+
+\section{Discussion}
+
+% =====================================================================
+% SUGGESTION: main.tex is empty here. Draft below frames open questions
+% against the workshop themes (evaluation, grounding, sufficiency of
+% language), then adds the two claims the retrieved literature does NOT
+% contain -- both are defensible novelty claims and both were checked
+% against the retrieved set rather than assumed.
+% =====================================================================
+Three questions follow from the integration. First, \emph{evaluation:} what
+metrics capture whether facial expressivity improves \emph{dialogue}
+outcomes---clarification success, turn-taking smoothness, perceived
+trust---rather than likeability alone? Second, \emph{grounding:} can gaze be
+driven by retico's grounding state, so the face looks at the referent under
+discussion? Third, \emph{sufficiency of language:} a controlled face-on/off,
+congruent/incongruent-affect study with this stack is a clean way to probe
+how much expressive output adds beyond words.
+
+% SUGGESTION: this paragraph is worth including even in a short paper. It
+% is the clearest statement of what is new, and each claim was checked
+% against the retrieved literature rather than assumed.
+Two gaps in the existing literature shape that agenda. There is no
+interchange format for rendered face assets: BML standardised behavior
+\emph{requests}~\cite{kopp2006bml} but not the rig they drive, and every
+system above defines its own channel set. And no published system reports
+what it costs to get a working face---the expression-generation work
+evaluates output quality, not authoring or deployment effort---so a
+time-to-working-face comparison against an existing
+toolkit~\cite{alvesoliveira2022flexsdk} would be both novel and cheap to run.
+
+% SUGGESTION: if the paper claims portability to a physical face, bound
+% the claim here rather than letting a reviewer bound it for you.
+%
+% WHY-CITE: broadbent2013screenface -- screen faces differ from physical
+%   ones on mind attribution and eeriness.
+% WHY-CITE: longface2026 -- display proportion and orientation change
+%   perception.
+% WHY-CITE: specian2021quori -- cite the port target rather than naming
+%   it bare.
+% WHY-CITE: chen2019culturalexpr -- bounds the generality of a fixed base
+%   pose set across cultures. One clause is enough.
+% WHY-CITE: hartholt2019vhtoolkit -- precedent for one behavior pipeline
+%   driving web, VR, and AR embodiments; supports the portability
+%   ambition without over-claiming it.
+Portability is a claim about the value stream, not about perception.
+Display geometry, proportion, and physicality are known to change how a face
+is read~\cite{broadbent2013screenface,longface2026}, so an identical channel
+stream rendered on a physical platform such as Quori~\cite{specian2021quori}
+is not an identical face. Driving multiple embodiments from one behavior
+pipeline is established~\cite{hartholt2019vhtoolkit}; establishing that they
+are perceived alike is a separate empirical question, as is the cultural
+generality of any fixed set of base poses~\cite{chen2019culturalexpr}.
+
+% ---------------------------------------------------------------------
+% FOR-INIT-DRAFT: Sec. VI (Evaluation) and Sec. VII (Limitations).
+%   gunes2022reproducibility -- argues HRI's reproducibility problem
+%       directly. This is what converts "we ship reusable infrastructure"
+%       from a convenience claim into a scientific one, and it is the
+%       strongest available framing for a systems paper with no user
+%       study. Place it in the introduction OR the evaluation, not both.
+%   bartneck2009godspeed -- the Godspeed instruments a future user study
+%       would use. One clause in Future Work, not a section.
+%   kalegina2018facespace -- in Limitations, gives you a principled way
+%       to say which parts of the rendered-face design space the current
+%       rig does and does not cover.
+% ---------------------------------------------------------------------
+
+\section{Conclusion}
+
+% =====================================================================
+% SUGGESTION: main.tex is empty here. One-paragraph restatement, with the
+% reproducibility framing that makes a systems contribution a scientific
+% one.
+%
+% WHY-CITE: gunes2022reproducibility -- HRI's reproducibility problem.
+%   Use it here OR in the introduction, not both.
+% =====================================================================
+We described an architecture that couples incremental spoken dialogue with an
+expressive robot face, using retico to determine what to communicate and when,
+and Vizij to determine how it appears. Because the mapping from incremental
+units to face channels is an editable artifact rather than a hard-coded
+behavior tree, another lab can rerun, inspect, and diff it---which matters in
+a field where one-off implementations limit
+reproducibility~\cite{gunes2022reproducibility}. The result is an open
+substrate for expressive, bidirectional human--robot dialogue, and a testbed
+for the questions above.
+
+
+
+% \section*{Acknowledgment}
+
+% =====================================================================
+% SUGGESTION (bibliography): main.tex does not yet pull in a bib. Add
+% these two lines. All three files are needed unless you merge them.
+%
+% ALSO FIX (pre-existing, unrelated to these additions): refs.bib's
+% elbeleidy2026vizij is declared @article with a "conference = {...}"
+% field. BibTeX does not recognise "conference", so the venue is silently
+% dropped and IEEEtran.bst emits "Warning--empty journal". It should be:
+%
+%   @inproceedings{elbeleidy2026vizij,
+%     author    = {Elbeleidy, Saad and Schoen, Andrew and Birmingham, Chris
+%                  and Ribeiro, Tiago and Paleologue, Victor and
+%                  Dooley, Douglas and Mead, Ross},
+%     title     = {Vizij: Supporting the design, animation, and deployment
+%                  of rendered robot faces},
+%     booktitle = {AAAI Fall Symposium on Unifying Representations for
+%                  Robot Application Development (UR-RAD)},
+%     year      = {2025}
+%   }
+%
+% Note also that refs.bib spells the fifth author "Paleologue, Victor"
+% while the ACM record for the HRI 2026 companion paper (and therefore
+% vizij_suggested_refs.bib) has "Pal\'eologue, Victor". Pick one and use
+% it in both entries.
+% =====================================================================
+% The keys below are recommended for init_draft.tex sections that do not
+% exist in main.tex (gaze arbitration, lip-sync, evaluation). \nocite keeps
+% them in this file's rendered bibliography so you can see the full set;
+% delete this line when merging into the paper.
+\nocite{andrist2014aversion,kipp2015gazeattention,pejsa2013stylizedgaze,
+        ribeiro2019nutty,ribeiro2017erik,schoen2023lively,
+        ribeiro2012illusion,gielniak2011readability,hoffman2014movement,
+        lasseter1987principles,zhou2018visemenet,karras2017audiodriven,
+        cudeiro2019voca,fan2022faceformer,
+        bartneck2009godspeed,generativenonverbal2026,hu2026liplearning}
+
+\bibliographystyle{IEEEtran}
+\bibliography{refs,suggested_refs,vizij_suggested_refs}
+
+\end{document}

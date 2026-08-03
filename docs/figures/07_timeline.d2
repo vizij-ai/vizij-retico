@@ -1,0 +1,44 @@
+...@_brand.d2
+# Fig (PLACEHOLDER): what the evaluation figure will show once a run is recorded.
+#
+# The slot and the caption exist before the data does, deliberately -- the claim
+# this figure has to support is the paper's central one, and writing the caption
+# first keeps the measurement honest about what it needs to produce.
+#
+# To fill it: record a session through the live WebSocket, take the timestamps of
+# turn-shift / backchannel / first audible clause relative to the user's utterance,
+# and plot them against a turn-based baseline that can only respond after the
+# silence. Replace this file entirely -- a bar-and-axis diagram is the wrong tool
+# for real data; use a plotted timeline.
+
+direction: down
+
+(** -> **)[*].style.stroke: "#555555"
+
+pending: {
+  label: "MEASURED DATA PENDING"
+  class: highlight
+}
+
+incremental: {
+  label: "incremental"
+  class: group
+  direction: right
+
+  utt: { label: "the person's utterance\n————————————————"; class: neutral }
+  shift: { label: "turn shift\nrises here"; class: primary }
+  bc: { label: "backchannel\nlands here"; class: primary }
+  clause: { label: "first audible\nclause here"; class: emphasis }
+}
+
+baseline: {
+  label: "turn-based baseline"
+  class: group
+  direction: right
+
+  utt2: { label: "the same utterance\n————————————————"; class: neutral }
+  wait: { label: "silence detected,\nonly then a reply"; class: secondary }
+}
+
+pending -> incremental
+incremental -> baseline: "the gap is the result" {style.stroke: "#EC4D00"; style.stroke-width: 2}

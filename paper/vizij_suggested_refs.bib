@@ -1,0 +1,639 @@
+% =====================================================================
+% vizij_suggested_refs.bib
+% ---------------------------------------------------------------------
+% Additional references recommended for the Vizij x Retico paper, drawn
+% from a literature map of rendered robot faces, expressive-agent
+% software, gaze, lip-sync and affect representation.
+%
+% Companion file: vizij_suggestions.tex -- a review memo that says, for
+% each section of init_draft.tex, which of these belongs there and why,
+% with paste-ready sentences.
+%
+% NO KEY COLLISIONS. refs.bib and suggested_refs.bib already hold the
+% incremental-dialogue side of the bibliography; every key below was
+% checked against both. The Admoni & Scassellati gaze review is
+% deliberately ABSENT here because suggested_refs.bib already defines it
+% as admoni2017social -- use that key.
+%
+% PROVENANCE. Every entry was resolved through OpenAlex and its metadata
+% (authors, title, venue, pages, year) re-fetched from Crossref, which is
+% the source of the fields below. Two exceptions are marked inline:
+% thiebaux2008smartbody (the ACM 10.5555 DOI does not resolve at doi.org,
+% so no DOI field is emitted) and ribeiro2019nutty (arXiv; verified via
+% the arXiv API rather than Crossref).
+%
+% Usage:  \bibliography{refs,suggested_refs,vizij_suggested_refs}
+% =====================================================================
+
+
+% =====================================================================
+% A. Rendered robot faces: design space and perception
+% =====================================================================
+
+% WHAT:  Surveys rendered robot faces and relates face features (eyes, pupils, mouth,
+%   eyebrows, detail level) to perceived attributes.
+% WHERE: Sec. II and Sec. VII. The taxonomy your rig's channel set should be checked
+%   against; also the reference for 'which face features carry meaning'.
+@inproceedings{kalegina2018facespace,
+  author    = {Kalegina, Alisa and Schroeder, Grace and Allchin, Aidan and Berlin, Keara and Cakmak, Maya},
+  title     = {Characterizing the Design Space of Rendered Robot Faces},
+  year      = {2018},
+  booktitle = {Proceedings of the 2018 ACM/IEEE International Conference on Human-Robot Interaction},
+  pages     = {96--104},
+  doi       = {10.1145/3171221.3171286}
+}
+
+% WHAT:  Experiment: a robot with a more humanlike face display is perceived
+%   differently on mind attribution and eeriness.
+% WHERE: Sec. VII, screen-vs-physical embodiment. Evidence that the display itself is
+%   an experimental variable, not a neutral substrate.
+@article{broadbent2013screenface,
+  author  = {Broadbent, Elizabeth and Kumar, Vinayak and Li, Xingyan and Sollers, John and Stafford, Rebecca Q. and MacDonald, Bruce A. and Wegner, Daniel M.},
+  title   = {Robots with Display Screens: A Robot with a More Humanlike Face Display Is Perceived To Have More Mind and a Better Personality},
+  year    = {2013},
+  journal = {PLoS ONE},
+  volume  = {8},
+  number  = {8},
+  pages   = {e72589},
+  doi     = {10.1371/journal.pone.0072589}
+}
+
+% WHAT:  HRI 2026 design space and guidelines for informational robot screens.
+% WHERE: Sec. VII. Extends the face-design space to screens as an information surface
+%   -- relevant because your face shares a browser canvas.
+@inproceedings{screens2026,
+  author    = {Kim, Yujin and Lee, Christine P and Mutlu, Bilge},
+  title     = {Speaking with Screens: Design Space and Guidelines for Informational Robot Screens},
+  year      = {2026},
+  booktitle = {Proceedings of the 21st ACM/IEEE International Conference on Human-Robot Interaction},
+  pages     = {385--394},
+  doi       = {10.1145/3757279.3785557}
+}
+
+% WHAT:  Studies how robot screen proportions and orientation change human perception.
+% WHERE: Sec. VII. Direct support for the claim that the port to a different display
+%   geometry is not perceptually neutral.
+@incollection{longface2026,
+  author    = {Liberman-Pincu, E. and Oron-Gilad, T.},
+  title     = {Why the Long Face? The Influence of Robot Screen Proportions and Orientation on Human Perception and Interaction},
+  year      = {2026},
+  booktitle = {Computer-Human Interaction Research and Applications},
+  series    = {Communications in Computer and Information Science},
+  publisher = {Springer Nature Switzerland},
+  pages     = {3--11},
+  doi       = {10.1007/978-3-032-16451-3\_1}
+}
+
+% WHAT:  2026 review of hyper-realistic physical robot heads.
+% WHERE: Sec. II or VII. The physical-face alternative your rendered approach trades
+%   against; cite it when stating the trade-off rather than ignoring it.
+@article{hyperrealistic2026,
+  author  = {Itatani, Naoya and Zavaglia, Melissa},
+  title   = {Towards Hyper-realistic Robot Heads: A Review},
+  year    = {2026},
+  journal = {Journal of Intelligent \& Robotic Systems},
+  volume  = {112},
+  number  = {3},
+  doi     = {10.1007/s10846-026-02417-6}
+}
+
+
+% =====================================================================
+% B. Rendered-face and expressive-robot software stacks
+% =====================================================================
+
+% WHAT:  HRI 2026 workshop-tutorial companion paper for the Vizij ecosystem.
+% WHERE: Sec. I. Companion record to the UR-RAD paper; cite both when introducing Vizij.
+@inproceedings{elbeleidy2026tutorial,
+  author    = {Elbeleidy, Saad and Schoen, Andrew and Birmingham, Christopher and Ribeiro, Tiago and Pal\'eologue, Victor and Dooley, Douglas and Mead, Ross},
+  title     = {{Vizij:} A Workshop \& Tutorial on Expressive Robot Faces},
+  year      = {2026},
+  booktitle = {Companion Proceedings of the 21st ACM/IEEE International Conference on Human-Robot Interaction},
+  pages     = {1411--1413},
+  doi       = {10.1145/3776734.3789491}
+}
+
+% WHAT:  Open-source SDK that builds a social robot from two tablet screens: face
+%   design, expression authoring, Wizard-of-Oz control, text-based scripting.
+% WHERE: Sec. II. The nearest prior art for open-source rendered-face tooling. Your
+%   differentiation is the incremental drive signal and the runtime, not
+%   open-sourceness.
+@inproceedings{alvesoliveira2022flexsdk,
+  author    = {Alves-Oliveira, Patricia and Mihata, Kai and Karim, Raida and Bjorling, Elin A. and Cakmak, Maya},
+  title     = {{FLEX-SDK:} An Open-Source Software Development Kit for Creating Social Robots},
+  year      = {2022},
+  booktitle = {Proceedings of the 35th Annual ACM Symposium on User Interface Software and Technology},
+  pages     = {1--10},
+  doi       = {10.1145/3526113.3545707}
+}
+
+% WHAT:  Back-projected human-like robot head for multiparty interaction.
+% WHERE: Sec. II. The reference rendered/projected face platform, and the basis of the
+%   two HRI 2026 systems below.
+@incollection{almoubayed2012furhat,
+  author    = {Al Moubayed, Samer and Beskow, Jonas and Skantze, Gabriel and Granstr\"om, Bj\"orn},
+  title     = {{Furhat:} A Back-Projected Human-Like Robot Head for Multiparty Human-Machine Interaction},
+  year      = {2012},
+  booktitle = {Cognitive Behavioural Systems},
+  series    = {Lecture Notes in Computer Science},
+  publisher = {Springer Berlin Heidelberg},
+  pages     = {114--130},
+  doi       = {10.1007/978-3-642-34584-5\_9}
+}
+
+% WHAT:  Framework for configurable, real-time, task-based and communicative robot
+%   motion; arbitrates objectives that would otherwise be mutually exclusive.
+% WHERE: Sec. III-D. The closest published analogue to your gaze arbitration problem,
+%   solved for motion rather than faces. Co-authored by a Vizij author -- state
+%   the lineage rather than citing it as independent work.
+@inproceedings{schoen2023lively,
+  author    = {Schoen, Andrew and Sullivan, Dakota and Zhang, Ze Dong and Rakita, Daniel and Mutlu, Bilge},
+  title     = {Lively: Enabling Multimodal, Lifelike, and Extensible Real-time Robot Motion},
+  year      = {2023},
+  booktitle = {Proceedings of the 2023 ACM/IEEE International Conference on Human-Robot Interaction},
+  pages     = {594--602},
+  doi       = {10.1145/3568162.3576982}
+}
+
+% WHAT:  Layered robot-animation runtime; reviews how interactive robot animation
+%   descends from character-animation principles and practice.
+% WHERE: Sec. III-C/III-D. The posture/impulse split has a precedent here; cite it when
+%   introducing layered composition.
+% NOTE:  verified via arXiv API, submitted 2019-04-05
+@article{ribeiro2019nutty,
+  author  = {Ribeiro, Tiago and Paiva, Ana},
+  title   = {Nutty-based Robot Animation -- Principles and Practices},
+  year    = {2019},
+  journal = {arXiv preprint arXiv:1904.02898},
+  doi     = {10.48550/arXiv.1904.02898}
+}
+
+% WHAT:  Real-time expressive inverse kinematics: blends a full-body expressive
+%   posture with an end-effector orientation constraint.
+% WHERE: Sec. III-D. Precedent for expressive intent and task constraint sharing one
+%   solver -- the same shape as your gaze slot.
+@inproceedings{ribeiro2017erik,
+  author    = {Ribeiro, Tiago and Paiva, Ana},
+  title     = {Animating the adelino robot with {ERIK:} the expressive robotics inverse kinematics},
+  year      = {2017},
+  booktitle = {Proceedings of the 19th ACM International Conference on Multimodal Interaction},
+  pages     = {388--396},
+  doi       = {10.1145/3136755.3136791}
+}
+
+% WHAT:  Community-informed design of the Quori socially interactive humanoid.
+% WHERE: Sec. VII. Cite when naming the physical-face port target.
+@article{specian2021quori,
+  author  = {Specian, Andrew and Mead, Ross and Kim, Simon and Mataric, Maja and Yim, Mark},
+  title   = {{Quori:} A Community-Informed Design of a Socially Interactive Humanoid Robot},
+  year    = {2022},
+  journal = {IEEE Transactions on Robotics},
+  volume  = {38},
+  number  = {3},
+  pages   = {1755--1772},
+  doi     = {10.1109/tro.2021.3111718}
+}
+
+
+% =====================================================================
+% C. Behavior representation and realization (the BML lineage)
+% =====================================================================
+
+% WHAT:  The Behavior Markup Language: a common representation for multimodal agent
+%   behavior with explicit synchronization points between modalities.
+% WHERE: Sec. III-C. The most important addition to this paper. Your IU->animation
+%   mapping is a behavior representation; position it as adopting, extending, or
+%   deliberately rejecting BML.
+@incollection{kopp2006bml,
+  author    = {Kopp, Stefan and Krenn, Brigitte and Marsella, Stacy and Marshall, Andrew N. and Pelachaud, Catherine and Pirker, Hannes and Th\'orisson, Kristinn R. and Vilhj\'almsson, Hannes},
+  title     = {Towards a Common Framework for Multimodal Generation: The Behavior Markup Language},
+  year      = {2006},
+  booktitle = {Intelligent Virtual Agents},
+  series    = {Lecture Notes in Computer Science},
+  publisher = {Springer Berlin Heidelberg},
+  pages     = {205--217},
+  doi       = {10.1007/11821830\_17}
+}
+
+% WHAT:  Open-source BML realizer built on hierarchically connected animation
+%   controllers.
+% WHERE: Sec. III-C/III-D. Prior art for controller-level composition on a shared body.
+% NOTE:  ACM DL 10.5555/1402383.1402409 does not resolve at doi.org; verified via OpenAlex W2135966470
+@inproceedings{thiebaux2008smartbody,
+  author    = {Thiebaux, Marcus and Marsella, Stacy and Marshall, Andrew N. and Kallmann, Marcelo},
+  title     = {SmartBody: Behavior Realization for Embodied Conversational Agents},
+  year      = {2008},
+  booktitle = {Proc. 7th Intl. Joint Conf. on Autonomous Agents and Multiagent Systems (AAMAS)},
+  pages     = {151--158}
+}
+
+% WHAT:  BML realizer designed for continuous interaction with tight temporal
+%   coordination, mixing procedural control with recorded motion.
+% WHERE: Sec. III-C. The closest prior work to your revisability requirement: a
+%   realizer built for behavior plans that change while they are running.
+@article{welbergen2009elckerlyc,
+  author  = {van Welbergen, Herwin and Reidsma, Dennis and Ruttkay, Zs\'ofia M. and Zwiers, Job},
+  title   = {Elckerlyc: A {BML} Realizer for continuous, multimodal interaction with a Virtual Human},
+  year    = {2009},
+  journal = {Journal on Multimodal User Interfaces},
+  volume  = {3},
+  number  = {4},
+  pages   = {271--284},
+  doi     = {10.1007/s12193-010-0051-3}
+}
+
+% WHAT:  Toolkit that maps input text to synchronized nonverbal behavior and speech.
+% WHERE: Sec. III-C. The text-to-behavior authoring precedent for your affect module.
+@incollection{cassell2004beat,
+  author    = {Cassell, Justine and Vilhj\'almsson, Hannes H\"ogni and Bickmore, Timothy},
+  title     = {{BEAT:} the Behavior Expression Animation Toolkit},
+  year      = {2004},
+  booktitle = {Life-Like Characters},
+  series    = {Cognitive Technologies},
+  publisher = {Springer Berlin Heidelberg},
+  pages     = {163--185},
+  doi       = {10.1007/978-3-662-08373-4\_8}
+}
+
+% WHAT:  Virtual-human framework spanning mobile, web, VR and AR from one behavior
+%   pipeline.
+% WHERE: Sec. VII. Precedent for the cross-embodiment portability claim you defer to
+%   future work.
+@inproceedings{hartholt2019vhtoolkit,
+  author    = {Hartholt, Arno and Fast, Ed and Reilly, Adam and Whitcup, Wendy and Liewer, Matt and Mozgai, Sharon},
+  title     = {Ubiquitous Virtual Humans: A Multi-platform Framework for Embodied {AI} Agents in XR},
+  year      = {2019},
+  booktitle = {2019 IEEE International Conference on Artificial Intelligence and Virtual Reality (AIVR)},
+  pages     = {308--3084},
+  doi       = {10.1109/aivr46125.2019.00072}
+}
+
+
+% =====================================================================
+% D. Gaze models and arbitration
+% =====================================================================
+
+% WHAT:  Model of conversational gaze aversion for humanlike robots, with timing.
+% WHERE: Sec. III-D. Your aversion intent has a published timing model; cite it or say
+%   why your policy differs.
+@inproceedings{andrist2014aversion,
+  author    = {Andrist, Sean and Tan, Xiang Zhi and Gleicher, Michael and Mutlu, Bilge},
+  title     = {Conversational gaze aversion for humanlike robots},
+  year      = {2014},
+  booktitle = {Proceedings of the 2014 ACM/IEEE international conference on Human-robot interaction},
+  pages     = {25--32},
+  doi       = {10.1145/2559636.2559666}
+}
+
+% WHAT:  Gaze cues shape participant roles (addressee, bystander, overhearer) in
+%   multiparty human-robot conversation.
+% WHERE: Sec. III-D. Grounds the 'gaze is the most contended resource' claim in a
+%   communicative function, not just attention.
+@inproceedings{mutlu2009footing,
+  author    = {Mutlu, Bilge and Shiwa, Toshiyuki and Kanda, Takayuki and Ishiguro, Hiroshi and Hagita, Norihiro},
+  title     = {Footing in Human-Robot Conversations: How Robots Might Shape Participant Roles Using Gaze Cues},
+  year      = {2009},
+  booktitle = {Proceedings of the 4th ACM/IEEE international conference on Human robot interaction},
+  pages     = {61--68},
+  doi       = {10.1145/1514095.1514109}
+}
+
+% WHAT:  Stylized and performative gaze model for character animation, including
+%   non-anatomical eye designs.
+% WHERE: Sec. III-D. The graphics-side model that transfers to a rendered rig whose
+%   eyes are not anatomical.
+@article{pejsa2013stylizedgaze,
+  author  = {Pejsa, Tomislav and Mutlu, Bilge and Gleicher, Michael},
+  title   = {Stylized and Performative Gaze for Character Animation},
+  year    = {2013},
+  journal = {Computer Graphics Forum},
+  volume  = {32},
+  number  = {2pt2},
+  pages   = {143--152},
+  doi     = {10.1111/cgf.12034}
+}
+
+% WHAT:  Gaze and attention management for embodied conversational agents.
+% WHERE: Sec. III-D. Prior art for arbitrating competing attention demands.
+@article{kipp2015gazeattention,
+  author  = {Pejsa, Tomislav and Andrist, Sean and Gleicher, Michael and Mutlu, Bilge},
+  title   = {Gaze and Attention Management for Embodied Conversational Agents},
+  year    = {2015},
+  journal = {ACM Transactions on Interactive Intelligent Systems},
+  volume  = {5},
+  number  = {1},
+  pages   = {1--34},
+  doi     = {10.1145/2724731}
+}
+
+
+% =====================================================================
+% E. Speech-driven facial animation and lip-sync
+% =====================================================================
+
+% WHAT:  Animator-centric viseme model parameterized on independent jaw and lip
+%   axes, producing art-directable lip-sync.
+% WHERE: Sec. III-E. The right abstraction for a rig whose mouth is not anatomically
+%   human, and the natural comparison for your viseme pose set.
+@article{edwards2016jali,
+  author  = {Edwards, Pif and Landreth, Chris and Fiume, Eugene and Singh, Karan},
+  title   = {{JALI:} An animator-centric viseme model for expressive lip synchronization},
+  year    = {2016},
+  journal = {ACM Transactions on Graphics},
+  volume  = {35},
+  number  = {4},
+  pages   = {1--11},
+  doi     = {10.1145/2897824.2925984}
+}
+
+% WHAT:  Deep-learning system mapping audio to JALI viseme parameters.
+% WHERE: Sec. III-E. The published answer to your 'TTS emits audio, not phoneme timing'
+%   gap -- cite it when describing the amplitude fallback as a fallback.
+@article{zhou2018visemenet,
+  author  = {Zhou, Yang and Xu, Zhan and Landreth, Chris and Kalogerakis, Evangelos and Maji, Subhransu and Singh, Karan},
+  title   = {Visemenet: Audio-driven animator-centric speech animation},
+  year    = {2018},
+  journal = {ACM Transactions on Graphics},
+  volume  = {37},
+  number  = {4},
+  pages   = {1--10},
+  doi     = {10.1145/3197517.3201292}
+}
+
+% WHAT:  End-to-end audio-to-facial-animation with a separate emotional state.
+% WHERE: Sec. III-E. Precedent for driving speech and affect on the same face without
+%   the channels fighting.
+@article{karras2017audiodriven,
+  author  = {Karras, Tero and Aila, Timo and Laine, Samuli and Herva, Antti and Lehtinen, Jaakko},
+  title   = {Audio-driven facial animation by joint end-to-end learning of pose and emotion},
+  year    = {2017},
+  journal = {ACM Transactions on Graphics},
+  volume  = {36},
+  number  = {4},
+  pages   = {1--12},
+  doi     = {10.1145/3072959.3073658}
+}
+
+% WHAT:  Speech-driven 3D facial animation generalizing across speaking styles.
+% WHERE: Sec. III-E. Cite alongside FaceFormer as the learned-lipsync line.
+@inproceedings{cudeiro2019voca,
+  author    = {Cudeiro, Daniel and Bolkart, Timo and Laidlaw, Cassidy and Ranjan, Anurag and Black, Michael J.},
+  title     = {Capture, Learning, and Synthesis of {3D} Speaking Styles},
+  year      = {2019},
+  booktitle = {2019 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  pages     = {10093--10103},
+  doi       = {10.1109/cvpr.2019.01034}
+}
+
+% WHAT:  Transformer model for speech-driven 3D facial animation with long-context
+%   audio conditioning.
+% WHERE: Sec. III-E. Cite for why your smoothing behaves like a low-pass filter --
+%   learned models solve the same temporal problem differently.
+@inproceedings{fan2022faceformer,
+  author    = {Fan, Yingruo and Lin, Zhaojiang and Saito, Jun and Wang, Wenping and Komura, Taku},
+  title     = {{FaceFormer:} Speech-Driven {3D} Facial Animation with Transformers},
+  year      = {2022},
+  booktitle = {2022 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  pages     = {18749--18758},
+  doi       = {10.1109/cvpr52688.2022.01821}
+}
+
+% WHAT:  Science Robotics 2026: learning realistic lip motions for humanoid face
+%   robots.
+% WHERE: Sec. II and Sec. III-E. The current frontier for lip-sync on robots rather
+%   than on virtual characters; reviewers in this area will expect it.
+@article{hu2026liplearning,
+  author  = {Hu, Yuhang and Lin, Jiong and Goldfeder, Judah Allen and Wyder, Philippe M. and Cao, Yifeng and Tian, Steven and Wang, Yunzhe and Wang, Jingran and Wang, Mengmeng and Zeng, Jie and Mehlman, Cameron and Wang, Yingke and Zeng, Delin and Chen, Boyuan and Lipson, Hod},
+  title   = {Learning realistic lip motions for humanoid face robots},
+  year    = {2026},
+  journal = {Science Robotics},
+  volume  = {11},
+  number  = {110},
+  doi     = {10.1126/scirobotics.adx3017}
+}
+
+% WHAT:  2026 survey of generative nonverbal facial behavior for highly realistic
+%   embodied agents.
+% WHERE: Sec. II. One-citation coverage of the generative-face literature you are
+%   deliberately not competing with.
+@article{generativenonverbal2026,
+  author  = {Nguyen, Tri Tung Nguyen and Dam, Quang Tien and Tran, Dinh Tuan and Lee, Joo-Ho},
+  title   = {A survey on generative nonverbal facial behavior for highly realistic embodied agents},
+  year    = {2026},
+  journal = {Intelligent Service Robotics},
+  volume  = {19},
+  number  = {2},
+  doi     = {10.1007/s11370-025-00674-2}
+}
+
+
+% =====================================================================
+% F. LLM- and dialogue-driven facial expression
+% =====================================================================
+
+% WHAT:  System generating dynamic, context-aware robot facial expressions with
+%   language models; motivated by labor-intensive, platform-specific expression
+%   authoring with limited expressive range.
+% WHERE: Sec. II. The closest competitor and it shares your fragmentation framing. Your
+%   differentiation is incrementality: Xpress generates per context, you render
+%   mid-utterance.
+@inproceedings{antony2025xpress,
+  author    = {Antony, Victor Nikhil and Stiber, Maia and Huang, Chien-Ming},
+  title     = {Xpress: A System for Dynamic, Context-Aware Robot Facial Expressions Using Language Models},
+  year      = {2025},
+  booktitle = {2025 20th ACM/IEEE International Conference on Human-Robot Interaction (HRI)},
+  pages     = {958--967},
+  doi       = {10.1109/hri61500.2025.10974045}
+}
+
+% WHAT:  Real-time LLM-generated facial expressions for human-robot dialogue on
+%   Furhat.
+% WHERE: Sec. II. Appeared at the HRI 2026 workshop Vizij hosted -- an immediate
+%   conversation partner, not distant related work.
+@inproceedings{expressivefurhat2026,
+  author    = {Abbo, Giulio Antonio and Janssens, Ruben and Van de Vreken, Seppe and Belpaeme, Tony},
+  title     = {Expressive {Furhat:} Generating Real-Time Facial Expressions for Human-Robot Dialogue with {LLMs}},
+  year      = {2026},
+  booktitle = {Companion Proceedings of the 21st ACM/IEEE International Conference on Human-Robot Interaction},
+  pages     = {456--460},
+  doi       = {10.1145/3776734.3794436}
+}
+
+% WHAT:  Dual-loop framework for emotion-aware, empathic facial reaction in HRI.
+% WHERE: Sec. II. Same workshop; the dual-loop structure is a direct comparison for
+%   your declared-affect vs. perceived-affect split.
+@inproceedings{fluidxpress2026,
+  author    = {Kang, Chen and Alitai, Madina and Wang, Yiting and Cai, Xiaochi and Ma, Ruidong and Cangelosi, Angelo and Shangguan, Zhegong},
+  title     = {Fluid-Xpress: Emotion-Aware Dual-Loop Framework for Empathic Facial Reaction in {HRI}},
+  year      = {2026},
+  booktitle = {Companion Proceedings of the 21st ACM/IEEE International Conference on Human-Robot Interaction},
+  pages     = {425--429},
+  doi       = {10.1145/3776734.3794429}
+}
+
+% WHAT:  Real-time emotion generation in human-robot dialogue using LLMs.
+% WHERE: Sec. II. The earlier result your affect module extends; cite when explaining
+%   that affect is declared by the model rather than perceived.
+@article{hasumoto2023llmemotion,
+  author  = {Mishra, Chinmaya and Verdonschot, Rinus and Hagoort, Peter and Skantze, Gabriel},
+  title   = {Real-time emotion generation in human-robot dialogue using large language models},
+  year    = {2023},
+  journal = {Frontiers in Robotics and AI},
+  volume  = {10},
+  doi     = {10.3389/frobt.2023.1271610}
+}
+
+% WHAT:  Anticipatory human-robot facial co-expression: the robot predicts and
+%   co-times its expression rather than reacting after the fact.
+% WHERE: Sec. I or II. The strongest external support for the paper's core claim that
+%   expression must land during the turn, not after it.
+@article{coexpression2024,
+  author  = {Hu, Yuhang and Chen, Boyuan and Lin, Jiong and Wang, Yunzhe and Wang, Yingke and Mehlman, Cameron and Lipson, Hod},
+  title   = {Human-Robot Facial Coexpression},
+  year    = {2024},
+  journal = {Science Robotics},
+  volume  = {9},
+  number  = {88},
+  doi     = {10.1126/scirobotics.adi4724}
+}
+
+
+% =====================================================================
+% G. Affect representation for an emotion rig
+% =====================================================================
+
+% WHAT:  The circumplex model: affect organized on valence and arousal axes.
+% WHERE: Sec. III-C. One of the two control bases your emotion blend implicitly picks
+%   between; cite whichever you adopt and say why.
+@article{russell1980circumplex,
+  author  = {Russell, James A.},
+  title   = {A circumplex model of affect.},
+  year    = {1980},
+  journal = {Journal of Personality and Social Psychology},
+  volume  = {39},
+  number  = {6},
+  pages   = {1161--1178},
+  doi     = {10.1037/h0077714}
+}
+
+% WHAT:  The Facial Action Coding System: facial movement decomposed into action
+%   units.
+% WHERE: Sec. III-C. The discrete alternative to a continuous affect space. Your six
+%   base poses plus blends is a third option -- name it against these two.
+% NOTE:  Crossref indexes this DOI as a PsycTESTS record
+@book{ekman1978facs,
+  author    = {Ekman, Paul and Friesen, Wallace V.},
+  title     = {Facial Action Coding System: A Technique for the Measurement of Facial Movement},
+  year      = {1978},
+  publisher = {Consulting Psychologists Press},
+  doi       = {10.1037/t27734-000}
+}
+
+% WHAT:  Equipping social robots with culturally-sensitive facial expressions of
+%   emotion.
+% WHERE: Sec. VII. Bounds the generality of a fixed six-pose set; a one-line limitation.
+@inproceedings{chen2019culturalexpr,
+  author    = {Chen, Chaona and Hensel, Laura B. and Duan, Yaocong and Ince, Robin A. A. and Garrod, Oliver G. B. and Beskow, Jonas and Jack, Rachael E. and Schyns, Philippe G.},
+  title     = {Equipping social robots with culturally-sensitive facial expressions of emotion using data-driven methods},
+  year      = {2019},
+  booktitle = {2019 14th IEEE International Conference on Automatic Face \& Gesture Recognition (FG 2019)},
+  pages     = {1--8},
+  doi       = {10.1109/fg.2019.8756570}
+}
+
+
+% =====================================================================
+% H. Animation craft: smoothing, idle motion, readability
+% =====================================================================
+
+% WHAT:  The Disney animation principles translated to 3D computer animation:
+%   anticipation, slow in/slow out, follow-through.
+% WHERE: Sec. III-E. Your anticipatory cross-fade and your 'smoothed by default'
+%   principle are anticipation and slow in/slow out. Naming them connects a
+%   debugging result to established craft.
+@inproceedings{lasseter1987principles,
+  author    = {Lasseter, John},
+  title     = {Principles of traditional animation applied to {3D} computer animation},
+  year      = {1987},
+  booktitle = {Proceedings of the 14th annual conference on Computer graphics and interactive techniques},
+  pages     = {35--44},
+  doi       = {10.1145/37401.37407}
+}
+
+% WHAT:  Applies animation principles to robots, including for expressive idle and
+%   life-like presence.
+% WHERE: Sec. III-D. Support for 'the spontaneous blink is non-optional' -- the
+%   illusion-of-life argument for idle motion.
+@inproceedings{ribeiro2012illusion,
+  author    = {Ribeiro, Tiago and Paiva, Ana},
+  title     = {The illusion of robotic life: Principles and practices of animation for robots},
+  year      = {2012},
+  booktitle = {Proceedings of the seventh annual ACM/IEEE international conference on Human-Robot Interaction},
+  pages     = {383--390},
+  doi       = {10.1145/2157689.2157814}
+}
+
+% WHAT:  Animation principles applied to robot motion measurably improve
+%   readability of intent.
+% WHERE: Sec. III-D. Converts your idle/smoothing choices from aesthetics into a
+%   legibility claim.
+@inproceedings{gielniak2011readability,
+  author    = {Takayama, Leila and Dooley, Doug and Ju, Wendy},
+  title     = {Expressing thought: Improving robot readability with animation principles},
+  year      = {2011},
+  booktitle = {Proceedings of the 6th international conference on Human-robot interaction},
+  pages     = {69--76},
+  doi       = {10.1145/1957656.1957674}
+}
+
+% WHAT:  Design methodology placing movement, and animator practice, at the center
+%   of social robot design.
+% WHERE: Sec. III. Frames the editable mapping as a designer-facing artifact rather
+%   than an implementation detail.
+@article{hoffman2014movement,
+  author  = {Hoffman, Guy and Ju, Wendy},
+  title   = {Designing Robots With Movement in Mind},
+  year    = {2014},
+  journal = {Journal of Human-Robot Interaction},
+  volume  = {3},
+  number  = {1},
+  pages   = {89},
+  doi     = {10.5898/jhri.3.1.hoffman}
+}
+
+
+% =====================================================================
+% I. Evaluation instruments and replicability
+% =====================================================================
+
+% WHAT:  The Godspeed questionnaire series: standardized scales for
+%   anthropomorphism, animacy, likeability, perceived intelligence and safety.
+% WHERE: Sec. VI. If the user study in future work happens, these are the instruments
+%   reviewers expect.
+% NOTE:  published online 2008-11-20; journal issue dated 2009
+@article{bartneck2009godspeed,
+  author  = {Bartneck, Christoph and Kuli\'c, Dana and Croft, Elizabeth and Zoghbi, Susana},
+  title   = {Measurement Instruments for the Anthropomorphism, Animacy, Likeability, Perceived Intelligence, and Perceived Safety of Robots},
+  year    = {2009},
+  journal = {International Journal of Social Robotics},
+  volume  = {1},
+  number  = {1},
+  pages   = {71--81},
+  doi     = {10.1007/s12369-008-0001-3}
+}
+
+% WHAT:  Argues HRI has a reproducibility problem and proposes what reproducible
+%   HRI work requires.
+% WHERE: Sec. I or VI. This is what turns 'we ship reusable infrastructure' from a
+%   convenience claim into a scientific one -- the strongest available framing
+%   for a systems paper with no user study.
+@article{gunes2022reproducibility,
+  author  = {Gunes, Hatice and Broz, Frank and Crawford, Chris S. and der P\"utten, Astrid Rosenthal-von and Strait, Megan and Riek, Laurel},
+  title   = {Reproducibility in Human-Robot Interaction: Furthering the Science of {HRI}},
+  year    = {2022},
+  journal = {Current Robotics Reports},
+  volume  = {3},
+  number  = {4},
+  pages   = {281--292},
+  doi     = {10.1007/s43154-022-00094-5}
+}

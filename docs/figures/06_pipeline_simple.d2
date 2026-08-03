@@ -1,0 +1,125 @@
+...@_brand.d2
+# Fig: the pipeline, for a reader who knows neither retico nor Vizij.
+#
+# Deliberately NOT 04_pipeline. That figure names classes (WebInputModule, AsrGate,
+# VizijWebSocketModule) across 25 nodes; at column width in a two-column paper it
+# renders at ~4pt and nobody reads it.
+#
+# Framing: the robot's microphone, the robot's camera, the robot's face. This
+# deployment happens to run in a browser; for this audience that is noise, so the
+# figure speaks in sensors and effectors.
+#
+# LABELS: one or two words each. What each stage MEANS, and which parts are
+# swappable, lives in the caption -- caption text is set by LaTeX at 8pt and is
+# always legible, whereas text inside the diagram is scaled down by however much
+# the figure has to shrink. Every extra character in a box costs type size.
+#
+# LAYOUT: left-to-right on purpose. A vertical version at column width was still
+# unreadable -- long labels in a 3.4in column render at ~4pt. Flowing sideways
+# lets this run full text width as a two-column float, which roughly doubles the
+# type size. Labels are kept to two short lines for the same reason.
+
+
+# ELK, not the brand default of dagre: dagre spreads this graph over 5640 units
+# where ELK needs 2881, and since the figure is scaled to a fixed page width,
+# half the width means roughly double the type size. Also trims the outer pad.
+vars: {
+  d2-config: {
+    layout-engine: elk
+    pad: 10
+  }
+}
+direction: right
+
+# Dagre's inter-node spacing is a fixed number of units, so shrinking labels does
+# not shrink the diagram much -- but enlarging the TYPE does raise its share of
+# the total width, which is what survives being scaled down to fit the page.
+# Brand grey for every edge; declared before the edges we want coloured differently.
+(** -> **)[*].style.stroke: "#555555"
+
+person: {
+  label: "a person"
+  class: highlight; style.font-size: 30
+}
+
+sensors: {
+  style.opacity: 0
+  direction: down
+  mic: { label: "microphone"; class: neutral; style.font-size: 30 }
+  cam: { label: "camera"; class: neutral; style.font-size: 30 }
+}
+
+backend: {
+  label: "perception and dialogue"
+  class: group
+  direction: right
+
+  # Stacked, not chained: these three run at the same time on the same input.
+  # Ranking them one after another would contradict the figure's whole point.
+  sensing: {
+    style.opacity: 0
+    direction: down
+    floor: {
+      label: "the floor"
+      class: primary; style.font-size: 30
+    }
+    words: {
+      label: "words"
+      class: primary; style.font-size: 30
+    }
+    seeing: {
+      label: "their expression"
+      class: primary; style.font-size: 30
+    }
+  }
+  gen: {
+    style.opacity: 0
+    direction: down
+    reply: { label: "reply"; class: primary; style.font-size: 30 }
+    voice: { label: "voice"; class: primary; style.font-size: 30 }
+  }
+}
+
+bridge: {
+  label: "one connection"
+  class: secondary; style.font-size: 30
+}
+
+face: {
+  label: "the robot's face"
+  class: group
+  direction: down
+
+  policy: {
+    label: "mapping"
+    class: secondary; style.font-size: 30
+  }
+  channels: {
+    label: "face channels"
+    class: emphasis; style.font-size: 30
+  }
+}
+
+person -> sensors.mic
+person -> sensors.cam
+
+sensors.mic -> backend.sensing.floor: "at once" {style.stroke: "#2AA499"; style.stroke-width: 3; style.font-size: 28}
+sensors.mic -> backend.sensing.words {style.stroke: "#2AA499"; style.stroke-width: 3}
+sensors.cam -> backend.sensing.seeing {style.stroke: "#2AA499"; style.stroke-width: 3}
+
+backend.sensing.words -> backend.gen.reply
+backend.gen.reply -> backend.gen.voice
+backend.sensing.floor -> bridge
+backend.sensing.seeing -> bridge
+backend.gen.reply -> bridge
+backend.gen.voice -> bridge
+
+bridge -> face.policy
+face.policy -> face.channels
+
+face -> person: "answers mid-utterance" {
+  style.stroke: "#EC4D00"
+  style.stroke-width: 3
+  style.font-color: "#EC4D00"
+  style.font-size: 30
+}

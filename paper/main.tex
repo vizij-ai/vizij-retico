@@ -1,0 +1,157 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+% The preceding line is only needed to identify funding in the first footnote. If that is unneeded, please comment it out.
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{url}
+\usepackage{xcolor}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\begin{document}
+
+% \title{Vizij x Retico: A system proposal for incrementally adaptive expressive robot faces \\
+% {\footnotesize \textsuperscript{*}Note: Sub-titles are not captured in Xplore and
+% should not be used}
+% \thanks{Identify applicable funding agency here. If none, delete this.}
+% }
+% \title{Vizij x Retico: Integrating Incremental Spoken Dialogue with Expressive Robot Faces}
+\title{Vizij × Retico: A System Architecture for Driving Expressive Robot Faces from Incremental Dialogue}
+
+% \author{\IEEEauthorblockN{1\textsuperscript{st} Given Name Surname}
+% \IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+% \textit{name of organization (of Aff.)}\\
+% City, Country \\
+% email address or ORCID}
+% \and
+% \IEEEauthorblockN{2\textsuperscript{nd} Given Name Surname}
+% \IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+% \textit{name of organization (of Aff.)}\\
+% City, Country \\
+% email address or ORCID}
+% \and
+% \IEEEauthorblockN{3\textsuperscript{rd} Given Name Surname}
+% \IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+% \textit{name of organization (of Aff.)}\\
+% City, Country \\
+% email address or ORCID}
+% \and
+% \IEEEauthorblockN{4\textsuperscript{th} Given Name Surname}
+% \IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+% \textit{name of organization (of Aff.)}\\
+% City, Country \\
+% email address or ORCID}
+% \and
+% \IEEEauthorblockN{5\textsuperscript{th} Given Name Surname}
+% \IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+% \textit{name of organization (of Aff.)}\\
+% City, Country \\
+% email address or ORCID}
+% \and
+% \IEEEauthorblockN{6\textsuperscript{th} Given Name Surname}
+% \IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+% \textit{name of organization (of Aff.)}\\
+% City, Country \\
+% email address or ORCID}
+% }
+
+\maketitle
+
+
+
+\begin{abstract}
+Effective human--robot interaction is both multimodal and incremental, yet these properties are usually pursued separately: expressive face systems render gaze and emotion with no real-time signal to drive them, while incremental dialogue systems expose no expressive output. We present a system architecture integrating \textit{Retico}~\cite{michael2020retico}, an incremental framework for real-time spoken dialogue and robot control, with \textit{Vizij}~\cite{elbeleidy2026vizij}, an open-source framework for designing, animating, and deploying expressive rendered robot faces. Recent systems generate robot facial expression from language models, but do so from completed dialogue state; the architecture described here renders revisable partial signals mid-utterance. The proposed modular architecture provides a starting point for future work to replace and evaluate individual software behavior modules or module combinations.
+\end{abstract}
+
+
+
+\begin{IEEEkeywords}
+expressive rendered faces, incremental dialogue, social robots
+\end{IEEEkeywords}
+
+
+
+\section{Introduction}
+Effective human–robot interaction (HRI) must move beyond a unidirectional, listen-and-act paradigm toward genuinely bidirectional dialogue. For safe, trustworthy, and engaging interactions, robots must not only interpret instructions, but also ask clarifying questions, signal uncertainty, take turns, explain their behavior, and align with human intent. This work contributes directly to that goal by pairing two open-source systems that together span the full loop such interactions require: (1) \textit{Retico}~\cite{michael2020retico}, an incremental framework for real-time spoken dialogue and robot control, which determines \textit{what} and \textit{when} the robot communicates; and (2) \textit{Vizij}~\cite{elbeleidy2026vizij,elbeleidy2026tutorial}, a framework for designing, animating, and deploying expressive rendered robot faces, which determines \textit{how} that communication appears via gaze, visemes, and emotional expressions.
+
+
+
+\section{Motivation}
+Effective HRI is multimodal and incremental. These two properties are usually pursued in silos: expressive face systems render gaze and emotion agnostic of a signal to drive them, while incremental dialogue systems evaluate robot behavior agnostic of a wholistic multimodal robot expression. Interaction that is responsive in time but expressed on a static face---or expressive in the face, but lagging a turn behind---fails in the same way because a human partner reads timing and expression together.
+
+
+
+\subsection{Robot Expressivity \& \textit{Vizij}}
+Dialogue must align with the robot's appearance and expression. What the robot says is only part of the message, and a face that is static or mistimed undercuts the spoken content. Nonverbal expressions carry social meaning alongside speech, and a listener integrates both into a single interpretation~\cite{urakami2023nonverbal, admoni2017social}. When the two diverge---for example, a face that stays neutral while the robot apologizes, or a face's gaze that remains steady while it yields to the dialogue partner---the nonverbal channel does not simply go unused; it contradicts the words and results in a misaligned dialogue. Alignment is therefore not decoration on top of dialogue, but a condition for the dialogue being understood as intended.
+
+Expressivity can include a robot face that expresses gaze, visemes, and emotions effectively and in sync. Each channel does distinct work: gaze manages turn-taking, coordinates joint attention, and signals cognitive effort~\cite{mishra2023gaze}; visemes tie articulation to the speech signal so the face is seen to be speaking~\cite{edwards2016jali}; and emotional expression shapes how users judge trustworthiness and remain engaged~\cite{song2023robot}.
+
+\textit{Vizij} is an open-source ecosystem for designing, animating, and deploying expressive rendered robot faces~\cite{elbeleidy2026vizij}. \textit{Vizij} presents a system that addresses multichannel communication. It provides a standardized yet modular rigging and controller system spanning end-user definable channels, such as eye gaze, visemes, and emotional expression. \textit{Vizij} enables faces authored to be portable across robot platforms rather than rebuilt per deployment. What \textit{Vizij} does \textit{not} supply is the moment-to-moment signal that should drive those controllers.
+
+
+
+\subsection{Effective Human-Robot Spoken Dialogue \& \textit{Retico}}
+Dialogue is incremental. Speakers plan and articulate in overlapping stages rather than composing a whole utterance before speaking~\cite{levelt1989speaking}, and listeners develop their interpretations as words arrive~\cite{tanenhaus1995integration}. This is what makes fast feedback, overlap, and repair possible, and it is why turn-taking can be predicted continuously from incremental speech rather than detected after a silence~\cite{skantze2021review, ekstedt2022vap}. Systems built following this incremental approach are measurably more responsive and are better received by users~\cite{baumann2011evaluation, kohn2018incremental}.
+
+
+\begin{figure*}[ht!]
+  \centering
+  \includegraphics[width=\textwidth]{06_pipeline_simple.pdf}
+  \caption{An illustration of the data pipeline.}
+  \label{fig:pipeline}
+\end{figure*}
+
+While Large Language Models (LLMs) are increasingly used to generate dialogue, they process data monotonically. LLMs operate over single-sentence- or multi-sentence-level input and cannot revise an interpretation or a partial output as evidence arrives, which is precisely the capability real-time interaction demands~\cite{kennington2025prior}. The consequence for a robot is not merely added latency, but a coarser interaction. 
+
+\textit{Retico} addresses this by formalizing an Incremental Unit (IU) framework in which modules exchange revisable units of information~\cite{schlangen2011iu}. It presents the IU framework as a modular, real-time pipeline in which modules exchange incremental units, so the system can act on partial input and revise its decisions as further evidence arrives~\cite{michael2020retico, schlangen2011iu}. Subsequent work extends it toward robots specifically, providing the distributed, time-aligned, multimodal structure that physical deployment requires~\cite{kennington2020rrsds, kennington2025retico}.
+
+
+\section{Proposal: Vizij $\times$ Retico}
+
+
+
+In this paper, we present a system architecture integrating \textit{Vizij} and \textit{Retico}, so that the robot's expressive face is driven by the same incremental signals that drive its dialogue. A brief outline of this integration is presented in Figure \ref{fig:pipeline}. This integration results in three key benefits. The first concerns \textit{timing}: because expressive signals are available before an utterance concludes, the face can participate during a partner's turn rather than responding after it, which is the behavior that distinguishes conversational presence from sequential exchange. The second concerns \textit{revisability}: because the provisional status of a signal is preserved rather than discarded at the boundary between systems, the face may act upon a hypothesis precisely because it retains the ability to withdraw one. The third concerns \textit{reuse}: because the two systems meet through a single specified interface rather than through mutual accommodation, each component within that interface can be replaced without disturbing the others, and the architecture becomes an instrument for comparison rather than a single demonstration.
+
+The proposed interaction pipeline includes the following components:
+\begin{itemize}
+  \item \textit{Sensors:} The robot senses its dialogue partner's speech through the microphone and their emotional expression through the camera.
+  \item \textit{Turn-taking:} The turn-taking module continuously estimates when the robot should speak from the audio signal directly~\cite{skantze2021review, ekstedt2022vap}. It runs in parallel with recognition rather than downstream of it, so a turn estimate is available before any transcript exists.
+  \item \textit{Incremental speech recognition:} The speech recognition module emits partial hypotheses as it determines what the dialogue partner is saying, labeling each as \textit{added}, \textit{withdrawn}, or \textit{confirmed}, so that downstream modules receive not only the current interpretation, but its epistemic standing~\cite{schlangen2011iu,michael2020retico}.
+  \item \textit{Incremental dialogue production:} The reply is generated as a stream and split into clauses, each of which is synthesized and sent to the face as it is produced rather than after the reply completes.
+  \item \textit{Emotion generation:} Two sources drive expression. The robot's own affect is declared by the dialogue model at the start of each reply clause, so the face is set as that clause begins to be spoken rather than after the reply ends. Separately, the dialogue partner's expression is estimated from the camera and mirrored faintly.
+  \item \textit{Viseme generation:} Mouth shapes (visemes) follow the robot's own outgoing speech. Where the synthesizer reports phoneme timings, they drive the mouth poses directly~\cite{edwards2016jali,zhou2018visemenet}; where it does not, mouth opening follows the amplitude of the playing audio as a fallback.
+  \item \textit{Arbitration module:} The arbitration module receives the outputs of the emotion and viseme generators and combines them into a single set of controller values for the face. It ensures that the visemes are always expressed, while the emotional expression is blended in as a secondary layer.
+\end{itemize}
+
+
+
+We implemented this pipeline in a modular approach that allows a user (e.g., developer, designer, or researcher) to swap out different modules and evaluate their impact. The
+significance of this is methodological rather than merely practical. Substituting one component while holding the remainder fixed enables thorough scientific evaluation of the modified component and reproducible comparison with the original. Our proposed architecture is therefore not only a demonstration of a single system, but also a platform for future work to evaluate and compare individual modules or module combinations.
+
+\textbf{Demo:} We developed this pipeline in a web-based demo using the browser's microphone and camera as a replacement for the robot's sensors. For the face, we used the publicly available \textit{Quori}\footnote{\url{https://quori.org}}~\cite{specian2021quori} robot face. A screenshot of the demo is shown in Figures~\ref{fig:demo-screenshot-settings},~\ref{fig:demo-screenshot-pipeline}. %The demo is available at \url{https://vizij.ai/retico-demo}.
+
+
+\section{Conclusion}
+
+In this paper, we described an architecture that couples incremental spoken dialogue to
+an expressive robot face. The dialogue system, \textit{Retico}, determines \textit{what} is communicated
+and \textit{when}, and the face system, \textit{Vizij}, determines \textit{how} that communication appears via the face. The architecture enables robot expression to begin before an utterance is complete and to be withdrawn should the collected evidence change. Both systems we integrate are open source and each module within the pipeline is substitutable, which makes the proposed architecture a testbed rather than a simple demonstration---a
+contribution of which the field has argued it requires more~\cite{gunes2022reproducibility}. We hope this work will enable future research to evaluate the impact of individual software behavior modules or module combinations on the quality of human-robot interaction.
+
+
+
+\section*{AI Use Disclosure}
+The authors used generative artificial intelligence (AI) tools to assist in the writing of the paper and identifying relevant references. The authors provided an original outline to limit the AI's influence on the content, then verified and re-wrote the resulting output.
+
+
+
+% \section*{Acknowledgment}
+
+
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}
