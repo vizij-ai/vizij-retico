@@ -1,0 +1,227 @@
+# A throwaway Cloud Run deployment per pull request, so a branch can be tried in the
+# real environment before it reaches main.
+#
+# Both profiles, mirroring what main deploys. `lite` is what most reviews need, but a
+# turn-taking or ASR change is only exercisable on `full` (VAP + Whisper), and merging to
+# find that out is the wrong order. The cost is a ~20 minute `full` build on every push;
+# the service itself is free while nobody is connected.
+#
+# Previews scale to zero, so an idle one costs nothing, and both services are deleted when
+# the PR closes. Cleanup is a separate job so it still runs when the PR is closed unmerged.
+name: preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+# One preview per PR. Superseding is right here — the newest commit is what you want to
+# be testing — and unlike main a half-applied preview is not worth protecting.
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  PROJECT: vizij-retico
+  REGION: us-central1
+
+jobs:
+  deploy:
+    # Fork PRs get a read-only token and cannot mint the OIDC credential, so this would
+    # fail anyway — but skip it explicitly rather than relying on that. A preview builds
+    # and runs the PR's code against our project; that must never be triggerable by an
+    # outside contributor.
+    if: >
+      github.event.action != 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # mint the OIDC token for Workload Identity
+    strategy:
+      # Independent services. A `full` failure must not withhold the `lite` preview, which
+      # is the link most reviews are given.
+      fail-fast: false
+      matrix:
+        profile: [lite, full]
+
+    name: deploy (${{ matrix.profile }})
+    steps:
+      - uses: actions/checkout@v4
+
+      # `full` is ~4 GB compressed and roughly 10-12 GB unpacked, against a stock runner's
+      # ~14 GB of free space. Reclaiming the preinstalled toolchains we never use buys
+      # ~25 GB, which is the difference between this building and dying on ENOSPC
+      # two-thirds of the way through a 20 minute build.
+      - name: Reclaim disk
+        if: matrix.profile == 'full'
+        run: |
+          df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android \
+                      /usr/local/share/boost /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af
+          df -h / | tail -1
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/86159759255/locations/global/workloadIdentityPools/github/providers/github
+          service_account: github-deployer@vizij-retico.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and push
+        env:
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/vizij/vizij-retico"
+          # The profile belongs in the tag. Without it both legs of the matrix resolve to
+          # the same tag at the same commit, the second push overwrites the first, and
+          # whichever deployed later would quietly serve the other profile's image.
+          TAG="pr-${{ github.event.pull_request.number }}-${PROFILE}-${GITHUB_SHA::7}"
+          docker build --build-arg PROFILE="${PROFILE}" --tag "${IMAGE}:${TAG}" .
+          docker push "${IMAGE}:${TAG}"
+          echo "IMAGE_TAG=${TAG}" >> "$GITHUB_ENV"
+
+      - name: Deploy preview
+        id: deploy
+        env:
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          # `lite` keeps the bare per-PR name so its URL stays stable for anyone already
+          # holding the link; `full` takes a suffix, the same way deploy.sh names main's
+          # pair. deploy.sh honours SERVICE and mounts whichever secrets exist, so a
+          # preview gets the same Polly/Vertex wiring as production — and for `full` it
+          # also applies the 8 vCPU / --no-cpu-throttling sizing that profile requires.
+          SERVICE="vizij-retico-pr-${{ github.event.pull_request.number }}"
+          [ "$PROFILE" = "lite" ] || SERVICE="${SERVICE}-${PROFILE}"
+          PROJECT="$PROJECT" REGION="$REGION" PROFILE="$PROFILE" SERVICE="$SERVICE" \
+            IMAGE_TAG="$IMAGE_TAG" ./scripts/deploy.sh
+          URL=$(gcloud run services describe "$SERVICE" \
+                  --project "$PROJECT" --region "$REGION" --format='value(status.url)')
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "service=$SERVICE" >> "$GITHUB_OUTPUT"
+
+      # A URL that serves errors is not a preview. Fail before advertising it.
+      - name: Smoke test
+        env:
+          PROFILE: ${{ matrix.profile }}
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          # `full` cold-starts behind multi-GB of baked-in model weights, so give it the
+          # same longer budget main's deploy uses before calling this a failure.
+          if [ "$PROFILE" = "full" ]; then MAX=180; TRIES=8; else MAX=120; TRIES=6; fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time "$MAX" \
+                   --retry "$TRIES" --retry-delay 10 --retry-all-errors "$URL/health")
+          echo "GET /health -> $code"
+          test "$code" = "200"
+
+      # Hand the URL to the comment job. Matrix legs cannot use job `outputs` for this —
+      # every leg writes the same key and the last to finish wins — so each leg leaves its
+      # own file and the comment job collects them.
+      - name: Record the URL
+        run: |
+          mkdir -p urls
+          echo "${{ steps.deploy.outputs.url }}" > "urls/${{ matrix.profile }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: preview-url-${{ matrix.profile }}
+          path: urls/
+          retention-days: 1
+
+  comment:
+    # One comment covering both profiles, so this needs the whole matrix. `!cancelled()`
+    # rather than `success()`: if `full` failed, the `lite` preview is still worth having.
+    needs: deploy
+    if: ${{ !cancelled() && needs.deploy.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write # post the preview URLs back onto the PR
+
+    steps:
+      # Both legs may have failed, in which case there is no artifact at all and this step
+      # errors. That is not a failure of the commenting — the deploy job already reports
+      # it — so tolerate it and let the next step decide there is nothing to say.
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: preview-url-*
+          path: urls
+          merge-multiple: true
+
+      # One comment per PR, edited in place — a new comment on every push turns a review
+      # thread into a changelog of deploy bots.
+      - name: Comment the preview URLs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          MARKER="<!-- preview-url -->"
+          if [ ! -f urls/lite ] && [ ! -f urls/full ]; then
+            echo "no profile deployed; leaving the comment alone"
+            exit 0
+          fi
+          # Built by redirecting command output rather than a YAML block scalar: a quoted
+          # multi-line string would carry this step's indentation into the value, and >=4
+          # leading spaces makes GitHub render the whole comment as a code block.
+          {
+            echo "$MARKER"
+            echo "**Previews** — built from \`${GITHUB_SHA::7}\`. Scale to zero; deleted when this PR closes."
+            echo
+            # Only a profile that actually deployed in this run left a file, so a failed
+            # leg is absent rather than advertised as working.
+            for profile in lite full; do
+              [ -f "urls/$profile" ] || continue
+              case "$profile" in
+                lite) note="browser ASR + Gemini + Cloud TTS" ;;
+                full) note="adds VAP turn-taking + Whisper; the first connection cold-starts slowly" ;;
+              esac
+              echo "- \`$profile\` — $(cat "urls/$profile") — $note"
+            done
+          } > body.md
+          cat body.md
+          ID=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
+                 --jq "[.[] | select(.body | startswith(\"$MARKER\"))] | .[0].id // empty")
+          if [ -n "$ID" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${ID}" -F body=@body.md >/dev/null
+            echo "updated comment $ID"
+          else
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -F body=@body.md >/dev/null
+            echo "posted new comment"
+          fi
+          cat body.md >> "$GITHUB_STEP_SUMMARY"
+
+  teardown:
+    # Runs whether the PR merged or was abandoned; an orphaned service would otherwise
+    # sit there forever holding a public URL.
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/86159759255/locations/global/workloadIdentityPools/github/providers/github
+          service_account: github-deployer@vizij-retico.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Delete the preview services
+        run: |
+          BASE="vizij-retico-pr-${{ github.event.pull_request.number }}"
+          # Both, and independently: a PR that never produced one of them (e.g. a `full`
+          # build that failed every push, or a fork PR with no preview at all) has nothing
+          # to delete there, which is not a failure.
+          for SERVICE in "$BASE" "${BASE}-full"; do
+            if gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" >/dev/null 2>&1; then
+              gcloud run services delete "$SERVICE" --project "$PROJECT" --region "$REGION" --quiet
+              echo "deleted $SERVICE"
+            else
+              echo "no preview service $SERVICE"
+            fi
+          done

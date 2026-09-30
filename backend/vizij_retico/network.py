@@ -104,6 +104,11 @@ def _build_lite(hub: WebSocketHub, framer: EventFramer):
     web_in.subscribe(google_asr)
     google_asr.subscribe(gate)
 
+    # No Whisper in this graph. Say so, or a dev venv carrying the `full` extras offers
+    # it, the gate is pointed at a source with no module behind it, and listening stops
+    # working with nothing logged.
+    providers.set_wired_asr({"browser", "google"})
+
     gate.subscribe(bridge)
     gate.subscribe(llm)
     llm.subscribe(tts)
@@ -258,6 +263,9 @@ def _build_maai(hub: WebSocketHub, framer: EventFramer):
     google_asr = GoogleASRModule()
     web_in.subscribe(google_asr)
     google_asr.subscribe(gate)
+    # Whisper is not built here — AsrSwitcher constructs it lazily on first selection —
+    # but this graph can produce one, so the option is real.
+    providers.set_wired_asr({"browser", "google", "whisper"})
     gate.subscribe(bridge)
     gate.subscribe(llm)
     # Streamed clauses -> speech, spoken in generation order.

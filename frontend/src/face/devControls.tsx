@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useVizijRuntime, buildRigInputPath } from "@vizij/runtime-react";
+import { Panel } from "./Panel";
 
 /**
  * Dev panel: search + drive any rig input channel, with live values.
@@ -10,7 +11,25 @@ import { useVizijRuntime, buildRigInputPath } from "@vizij/runtime-react";
  */
 const MAX_ROWS = 250;
 
-export function DevControls() {
+/** Text-injection tools, moved here from the top bar. They are debug affordances — they
+ *  drive the pipeline without a microphone — and previously sat beside `listen` looking
+ *  like part of the product. */
+export interface DebugTools {
+  sayText: string;
+  setSayText: (v: string) => void;
+  say: () => void;
+  userText: string;
+  setUserText: (v: string) => void;
+  simulateUserTurn: () => void;
+}
+
+export function DevControls({
+  debug,
+  onClose,
+}: {
+  debug?: DebugTools;
+  onClose: () => void;
+}) {
   const rt = useVizijRuntime();
   const {
     ready,
@@ -86,10 +105,52 @@ export function DevControls() {
   };
 
   return (
-    <div className="absolute right-0 top-0 flex h-full w-96 flex-col bg-neutral-950/85 text-xs text-neutral-100 backdrop-blur">
-      <div className="flex flex-col gap-2 border-b border-neutral-800 p-3">
-        <div className="flex items-center justify-between">
-          <span className="font-semibold">dev · {filtered.length}/{allPaths.length} inputs</span>
+    <Panel
+      title={`dev · ${filtered.length}/${allPaths.length} inputs`}
+      onClose={onClose}
+      width="w-[24rem]"
+    >
+      {debug && (
+        <div className="-mx-3 -mt-3 mb-3 flex flex-col gap-1.5 border-b border-neutral-800 p-3">
+          <span className="text-[11px] uppercase tracking-wide text-neutral-400">
+            drive the pipeline without a mic
+          </span>
+          <div className="flex gap-1">
+            <input
+              className="min-w-0 flex-1 rounded border border-neutral-700 bg-neutral-800 px-2 py-1 outline-none focus:border-teal-500"
+              value={debug.userText}
+              onChange={(e) => debug.setUserText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && debug.simulateUserTurn()}
+              placeholder="say this as the user…"
+            />
+            <button
+              className="shrink-0 rounded bg-indigo-700 px-2 py-1 hover:bg-indigo-600"
+              onClick={debug.simulateUserTurn}
+              title="Inject as a user turn: ASR → turn gate → LLM → TTS → face"
+            >
+              user↵
+            </button>
+          </div>
+          <div className="flex gap-1">
+            <input
+              className="min-w-0 flex-1 rounded border border-neutral-700 bg-neutral-800 px-2 py-1 outline-none focus:border-teal-500"
+              value={debug.sayText}
+              onChange={(e) => debug.setSayText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && debug.say()}
+              placeholder="make the agent say…"
+            />
+            <button
+              className="shrink-0 rounded bg-teal-700 px-2 py-1 hover:bg-teal-600"
+              onClick={debug.say}
+              title="TTS only — skips ASR and the LLM"
+            >
+              say
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="-mx-3 mb-3 flex flex-col gap-2 border-b border-neutral-800 px-3 pb-3">
+        <div className="flex items-center justify-end">
           <div className="flex gap-1">
             <button
               className={`rounded px-2 py-1 ${animOn ? "bg-amber-600" : "bg-neutral-700"} hover:opacity-90`}
@@ -149,6 +210,6 @@ export function DevControls() {
         )}
         {filtered.length === 0 && <div className="opacity-60">no channels match “{query}”.</div>}
       </div>
-    </div>
+    </Panel>
   );
 }

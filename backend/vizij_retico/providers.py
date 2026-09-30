@@ -14,7 +14,7 @@ from __future__ import annotations
 import importlib.util
 import os
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 from .config import CONFIG
 
@@ -235,13 +235,33 @@ def tts_providers() -> dict[str, Provider]:
     }
 
 
+# Which ASR sources the running graph actually wires. `None` until the network is built
+# (the `hello` snapshot can be requested before that).
+#
+# What is *installed* is not the answer. A dev venv with the `full` extras still runs the
+# lite graph when started as `dev.sh lite`, and that graph builds no Whisper module — but
+# `find_spec` said yes, so Whisper offered itself, `hub.asr_source` was set to a source
+# nothing feeds, and the app went silently deaf. No error, anywhere.
+_WIRED_ASR: Optional[set[str]] = None
+
+
+def set_wired_asr(sources: Iterable[str]) -> None:
+    """Called by the network builder with the sources it actually constructed."""
+    global _WIRED_ASR
+    _WIRED_ASR = set(sources)
+
+
 def asr_providers() -> dict[str, Provider]:
     # retico-whisperasr is an optional extra — the "lite" container omits it, so the
     # option must show as unavailable there rather than failing when selected.
     whisper_ok = importlib.util.find_spec("retico_whisperasr") is not None
+    if _WIRED_ASR is not None:
+        whisper_ok = whisper_ok and "whisper" in _WIRED_ASR
     from . import google_asr
 
     google_ok, google_detail = google_asr.available()
+    if _WIRED_ASR is not None:
+        google_ok = google_ok and "google" in _WIRED_ASR
     return {
         "google": Provider(
             id="google",
@@ -265,7 +285,7 @@ def asr_providers() -> dict[str, Provider]:
             note=(
                 "retico-whisperasr on the streamed audio"
                 if whisper_ok
-                else "not installed (this is the 'lite' build)"
+                else "not in this build — start the backend in 'maai' mode for Whisper"
             ),
             available=whisper_ok,
         ),
